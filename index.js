@@ -49,7 +49,7 @@ client.once("ready", () => {
     botOnlineSince = Date.now();
 });
 
-// Define and register slash command
+// Slash command registration
 const commands = [
     new SlashCommandBuilder()
         .setName("ask")
@@ -78,13 +78,15 @@ client.on("interactionCreate", async interaction => {
         const question = interaction.options.getString("question");
         await interaction.deferReply();
         try {
-            const response = await fetch("https://api-inference.huggingface.co/models/google/flan-t5-small", {
+            const response = await fetch("https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta", {
                 method: "POST",
                 headers: {
                     "Authorization": `Bearer ${HUGGINGFACE_API_KEY}`,
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify({ inputs: question })
+                body: JSON.stringify({
+                    inputs: `[INST] ${question} [/INST]`
+                })
             });
 
             if (!response.ok) {
@@ -94,10 +96,10 @@ client.on("interactionCreate", async interaction => {
             }
 
             const data = await response.json();
-            const output = data?.[0]?.generated_text || data?.generated_text || "No answer returned.";
+            const output = data?.[0]?.generated_text || "⚠️ No answer returned.";
             await interaction.editReply(output);
         } catch (error) {
-            console.error("Error:", error);
+            console.error("❌ Error:", error);
             await interaction.editReply("⚠️ Sorry, something went wrong with the AI.");
         }
     }
