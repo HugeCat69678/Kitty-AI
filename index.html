@@ -1,113 +1,121 @@
-<!DOCTYPE html><html lang="en">
+<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kitty AI Bot Status</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI Bot Status</title>
   <style>
     body {
       margin: 0;
       font-family: 'Segoe UI', sans-serif;
-      background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+      background: linear-gradient(135deg, #1f1c2c, #928dab);
       color: white;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100vh;
-      animation: fadeIn 2s ease;
+      min-height: 100vh;
+      animation: fadeIn 1.2s ease;
     }
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(-10px); }
-      to { opacity: 1; transform: translateY(0); }
+      from {opacity: 0; transform: translateY(20px);}
+      to {opacity: 1; transform: translateY(0);}
     }
-    .card {
-      background: rgba(255, 255, 255, 0.1);
-      padding: 2rem;
-      border-radius: 20px;
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
-      text-align: center;
-      max-width: 400px;
-      width: 90%;
-    }
-    input, button {
-      padding: 0.6rem;
-      border-radius: 10px;
-      border: none;
-      margin: 0.5rem 0;
-      width: 100%;
-    }
-    button {
-      background: #ffffffcc;
-      color: #000;
-      cursor: pointer;
-      transition: background 0.3s ease;
-    }
-    button:hover {
-      background: #ffffff;
-    }
-    .hidden {
-      display: none;
+    h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
     }
     .status {
-      font-size: 1.5rem;
-      margin-bottom: 1rem;
+      font-size: 2rem;
+      margin: 1rem;
+    }
+    .uptime {
+      font-size: 1.2rem;
+    }
+    .login-form {
+      margin-top: 2rem;
+      background: rgba(0,0,0,0.3);
+      padding: 20px;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 300px;
+      animation: fadeIn 1.5s ease;
+    }
+    input, button {
+      padding: 10px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 6px;
+    }
+    button {
+      background: #5b5aa2;
+      color: white;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #7b7acf;
+    }
+    .admin-panel {
+      margin-top: 2rem;
+      text-align: center;
     }
   </style>
 </head>
 <body>
-  <div class="card" id="public">
-    <div class="status" id="statusText">Checking bot status...</div>
-    <form id="loginForm">
-      <input type="text" id="username" placeholder="Username" required />
-      <input type="password" id="password" placeholder="Password" required />
-      <button type="submit">Login</button>
-    </form>
-  </div>  <div class="card hidden" id="dashboard">
-    <h2>Admin Dashboard</h2>
-    <p>🟢 Online for: <span id="uptime">00:00:00</span></p>
-    <p>🔴 Offline for: <span id="downtime">00:00:00</span></p>
-    <button onclick="logout()">Logout</button>
-  </div>  <script>
-    const publicCard = document.getElementById('public');
-    const dashboardCard = document.getElementById('dashboard');
-    const loginForm = document.getElementById('loginForm');
-    const statusText = document.getElementById('statusText');
+  <h1>🤖 AI Bot Status</h1>
+  <div class="status" id="bot-status">Loading...</div>
+  <div class="uptime" id="uptime-info"></div>
 
-    async function checkStatus() {
+  <form class="login-form" id="login-form">
+    <input type="text" name="username" placeholder="Admin Username" required />
+    <input type="password" name="password" placeholder="Admin Password" required />
+    <button type="submit">Login</button>
+    <div id="login-error" style="color: red; display: none;">Invalid credentials</div>
+  </form>
+
+  <div class="admin-panel" id="admin-panel" style="display: none;">
+    <h2>🛠️ Admin Dashboard</h2>
+    <p id="uptime-detail"></p>
+    <p id="downtime-detail"></p>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('bot-status');
+    const uptimeInfoEl = document.getElementById('uptime-info');
+    const adminPanel = document.getElementById('admin-panel');
+    const uptimeDetail = document.getElementById('uptime-detail');
+    const downtimeDetail = document.getElementById('downtime-detail');
+
+    function formatTime(ms) {
+      const totalSec = Math.floor(ms / 1000);
+      const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+      const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+      const s = String(totalSec % 60).padStart(2, '0');
+      return `${h}:${m}:${s}`;
+    }
+
+    async function fetchStatus() {
       const res = await fetch('/bot-status');
       const data = await res.json();
-      const { online, uptime, downtime } = data;
-      statusText.textContent = online ? '🟢 AI is Online' : '🔴 AI is Offline';
-
-      const formatTime = ms => new Date(ms).toISOString().substr(11, 8);
-      if (dashboardCard.classList.contains('hidden')) return;
-      document.getElementById('uptime').textContent = formatTime(uptime);
-      document.getElementById('downtime').textContent = formatTime(downtime);
+      statusEl.textContent = data.online ? '🟢 Online' : '🔴 Offline';
+      uptimeInfoEl.textContent = data.online 
+        ? `Uptime: ${formatTime(data.uptime)}`
+        : `Downtime: ${formatTime(data.downtime)}`;
+      if (adminPanel.style.display === 'block') {
+        uptimeDetail.textContent = `Online for: ${formatTime(data.uptime)}`;
+        downtimeDetail.textContent = `Offline for: ${formatTime(data.downtime)}`;
+      }
     }
 
-    loginForm.addEventListener('submit', async (e) => {
+    fetchStatus();
+    setInterval(fetchStatus, 5000);
+
+    const form = document.getElementById('login-form');
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const username = document.getElementById('username').value;
-      const password = document.getElementById('password').value;
+      const formData = new FormData(form);
       const res = await fetch('/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-      if (res.ok) {
-        publicCard.classList.add('hidden');
-        dashboardCard.classList.remove('hidden');
-      } else {
-        alert('❌ Invalid login.');
-      }
-    });
-
-    function logout() {
-      dashboardCard.classList.add('hidden');
-      publicCard.classList.remove('hidden');
-    }
-
-    setInterval(checkStatus, 1000);
-    checkStatus();
-  </script></body>
-</html>
