@@ -4,7 +4,7 @@ import express from 'express'; import session from 'express-session'; import fet
 
 const __filename = fileURLToPath(import.meta.url); const __dirname = path.dirname(__filename);
 
-const app = express(); const PORT = process.env.PORT || 10000; const DISCORD_TOKEN = process.env.DISCORD_TOKEN; const CLIENT_ID = process.env.CLIENT_ID; const CLIENT_SECRET = process.env.CLIENT_SECRET; const REDIRECT_URI = process.env.REDIRECT_URI || 'https://discord.com/oauth2/authorize?client_id=1401222702236307496&response_type=code&redirect_uri=https%3A%2F%2Fkitty-ai.onrender.com%2Fauth%2Fdiscord%2Fcallback&scope=identify+guilds+guilds.members.read'; const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY; const GUILD_ID = '1401979156727730267'; const REQUIRED_ROLE_ID = '1401983936967610409'; const OWNER_ID = '722100931164110939';
+const app = express(); const PORT = process.env.PORT || 10000; const DISCORD_TOKEN = process.env.DISCORD_TOKEN; const CLIENT_ID = process.env.CLIENT_ID; const CLIENT_SECRET = process.env.CLIENT_SECRET; const REDIRECT_URI = process.env.REDIRECT_URI || 'https://kitty-ai.onrender.com/auth/discord/callback'; const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY; const GUILD_ID = '1401979156727730267'; const REQUIRED_ROLE_ID = '1401983936967610409'; const OWNER_ID = '722100931164110939';
 
 let isBotOnline = true; let onlineSince = Date.now(); let lastDowntime = null; let unauthorizedAttempts = []; let customAdmins = [];
 
