@@ -1,71 +1,166 @@
-// index.js import express from "express"; import session from "express-session"; import dotenv from "dotenv"; import { fileURLToPath } from "url"; import { dirname, join } from "path"; import fetch from "node-fetch"; import { Client, GatewayIntentBits, Partials, REST, Routes } from "discord.js"; import { v4 as uuidv4 } from "uuid";
+import express from "express";
+import session from "express-session";
+import fetch from "node-fetch";
+import { Client, GatewayIntentBits, REST, Routes, Partials } from "discord.js";
+import path from "path";
+import { fileURLToPath } from "url";
+import { v4 as uuidv4 } from "uuid";
+import crypto from "crypto";
 
-// Load environment variables from .env dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const __filename = fileURLToPath(import.meta.url); const __dirname = dirname(__filename); const app = express();
+// ENV
+const {
+  DISCORD_CLIENT_ID,
+  DISCORD_CLIENT_SECRET,
+  DISCORD_BOT_TOKEN,
+  DISCORD_GUILD_ID,
+  REQUIRED_ROLE_ID,
+  SESSION_SECRET,
+} = process.env;
 
-// Static files app.use(express.static(join(__dirname, "public"))); app.use(express.urlencoded({ extended: true })); app.use(express.json());
+const app = express();
+const port = process.env.PORT || 3000;
 
-// Express session app.use( session({ secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false, }) );
-
-// Discord bot setup const bot = new Client({ intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, ], partials: [Partials.Channel], });
-
-bot.once("ready", () => { console.log(Logged in as ${bot.user.tag}); });
-
-bot.login(process.env.BOT_TOKEN);
-
-// Discord OAuth2 login app.get("/auth/discord", (req, res) => { const state = uuidv4(); req.session.state = state; const redirectUri = encodeURIComponent( "https://kitty-ai.onrender.com/auth/discord/callback" ); res.redirect( https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&response_type=code&redirect_uri=${redirectUri}&scope=identify+guilds+guilds.members.read&state=${state} ); });
-
-app.get("/auth/discord/callback", async (req, res) => { const code = req.query.code; const state = req.query.state;
-
-if (!code || state !== req.session.state) { return res.status(403).send("Invalid state or missing code."); }
-
-try { // Exchange code for access token const tokenResponse = await fetch("https://discord.com/api/oauth2/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: process.env.CLIENT_ID, client_secret: process.env.CLIENT_SECRET, grant_type: "authorization_code", code, redirect_uri: "https://kitty-ai.onrender.com/auth/discord/callback", }), });
-
-const tokenData = await tokenResponse.json();
-const accessToken = tokenData.access_token;
-
-// Fetch user info
-const userResponse = await fetch("https://discord.com/api/users/@me", {
-  headers: { Authorization: `Bearer ${accessToken}` },
-});
-const user = await userResponse.json();
-
-// Fetch member info from server
-const memberResponse = await fetch(
-  `https://discord.com/api/users/@me/guilds/1401979156727730267/member`,
-  {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  }
+// Setup session
+app.use(
+  session({
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+  })
 );
 
-if (!memberResponse.ok) {
-  return res.redirect("/unauthorized.html");
-}
+// Serve static files
+app.use(express.static(path.join(__dirname, "public")));
+app.use(express.urlencoded({ extended: true }));
 
-const member = await memberResponse.json();
-const hasAdminRole = member.roles.includes("1401983936967610409");
+// In-memory store of linked users
+const linkedUsers = new Map();
 
-if (hasAdminRole) {
-  req.session.user = {
-    id: user.id,
-    username: user.username,
-    isAuthorized: true,
-  };
-  return res.redirect("/admin_signup.html");
-} else {
-  return res.redirect("/unauthorized.html");
-}
+// Bot setup
+const bot = new Client({
+  intents: [GatewayIntentBits.Guilds],
+  partials: [Partials.Channel],
+});
 
-} catch (err) { console.error("OAuth error:", err); res.status(500).send("Internal Server Error"); } });
+bot.once("ready", () => {
+  console.log(`Logged in as ${bot.user.tag}`);
+});
+bot.login(DISCORD_BOT_TOKEN);
 
-// Admin signup (only once per Discord account) app.post("/create_admin", (req, res) => { const { username, password } = req.body; if (!req.session.user || !req.session.user.isAuthorized) { return res.status(403).send("Unauthorized"); }
+// Routes
 
-// TODO: Save to database (only once per Discord user.id) // Example: admins[user.id] = { username, password }
+// Home page
+app.get("/", (req, res) => {
+  const isLinked = req.session.user && linkedUsers.has(req.session.user.id);
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
-return res.send("Admin created successfully!"); });
+// Discord login
+app.get("/auth/discord", (req, res) => {
+  const redirectUri = encodeURIComponent("https://kitty-ai.onrender.com/auth/discord/callback");
+  const scope = encodeURIComponent("identify guilds guilds.members.read");
+  res.redirect(`https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&response_type=code&redirect_uri=${redirectUri}&scope=${scope}`);
+});
 
-// Start server const PORT = process.env.PORT || 3000; app.listen(PORT, () => console.log(Web server running on port ${PORT}));
+// Discord callback
+app.get("/auth/discord/callback", async (req, res) => {
+  const code = req.query.code;
+  if (!code) return res.redirect("/");
 
+  try {
+    // Exchange code for token
+    const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: "https://kitty-ai.onrender.com/auth/discord/callback",
+      }),
+    });
+
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+
+    // Get user identity
+    const userResponse = await fetch("https://discord.com/api/users/@me", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const user = await userResponse.json();
+
+    // Get member roles
+    const memberRes = await fetch(`https://discord.com/api/users/@me/guilds/${DISCORD_GUILD_ID}/member`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!memberRes.ok) return res.send("You must be a member of the server.");
+    const member = await memberRes.json();
+
+    const hasRole = member.roles.includes(REQUIRED_ROLE_ID);
+    if (!hasRole) return res.send("You do not have the required role.");
+
+    if (linkedUsers.has(user.id)) {
+      return res.send("Your Discord account is already linked.");
+    }
+
+    // Store session
+    req.session.user = user;
+    req.session.accessToken = accessToken;
+
+    return res.redirect("/create-admin");
+  } catch (err) {
+    console.error(err);
+    return res.send("An error occurred.");
+  }
+});
+
+// Serve admin form
+app.get("/create-admin", (req, res) => {
+  const user = req.session.user;
+  if (!user || linkedUsers.has(user.id)) {
+    return res.redirect("/");
+  }
+
+  // Serve HTML for username/password input
+  res.send(`
+    <html>
+      <head><title>Create Admin</title></head>
+      <body>
+        <h2>Choose your admin username and password</h2>
+        <form action="/create-admin" method="POST">
+          <input name="username" placeholder="Username" required><br>
+          <input name="password" placeholder="Password" type="password" required><br>
+          <button type="submit">Create</button>
+        </form>
+      </body>
+    </html>
+  `);
+});
+
+// Handle admin creation
+app.post("/create-admin", (req, res) => {
+  const user = req.session.user;
+  if (!user || linkedUsers.has(user.id)) {
+    return res.redirect("/");
+  }
+
+  const { username, password } = req.body;
+  if (!username || !password) return res.send("Missing username or password.");
+
+  linkedUsers.set(user.id, {
+    username,
+    passwordHash: crypto.createHash("sha256").update(password).digest("hex"),
+  });
+
+  res.send("Admin account created!");
+});
+
+// Start server
+app.listen(port, () => {
+  console.log(`Server running on http://localhost:${port}`);
+});
