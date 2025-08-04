@@ -1,111 +1,37 @@
-import express from 'express';
-import session from 'express-session';
-import fetch from 'node-fetch';
-import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, InteractionType } from 'discord.js';
-import dotenv from 'dotenv';
-import crypto from 'crypto';
-import path from 'path';
-import { fileURLToPath } from 'url';
+// index.js import express from 'express'; import path from 'path'; import { fileURLToPath } from 'url'; import { Client, GatewayIntentBits, Partials } from 'discord.js'; import fs from 'fs'; import dotenv from 'dotenv';
 
 dotenv.config();
 
-const app = express();
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const bot = new Client({ intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.DirectMessages ], partials: [Partials.Channel] // Required to receive DMs });
 
-// Discord bot setup
-const bot = new Client({
-  intents: [GatewayIntentBits.Guilds],
-  partials: [Partials.Channel]
-});
+const ADMIN_ID = '722100931164110939'; const CREDENTIALS_FILE = './admin-credentials.json';
 
-bot.once('ready', () => {
-  console.log(`Logged in as ${bot.user.tag}`);
-});
+// Save credentials function saveAdminCredentials(username, password) { let data = {}; if (fs.existsSync(CREDENTIALS_FILE)) { data = JSON.parse(fs.readFileSync(CREDENTIALS_FILE)); } data[username] = password; fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(data, null, 2)); }
+
+bot.once('ready', () => { console.log(🤖 Logged in as ${bot.user.tag}); });
+
+bot.on('messageCreate', async (msg) => { if (!msg.guild && msg.author.id === ADMIN_ID) { const lines = msg.content.split('\n'); const usernameLine = lines.find(l => l.startsWith('Username (')); const passwordLine = lines.find(l => l.startsWith('Password ('));
+
+if (usernameLine && passwordLine) {
+  const username = usernameLine.slice(9, -1).trim();
+  const password = passwordLine.slice(9, -1).trim();
+
+  if (!username || !password) return msg.reply('❌ Invalid format.');
+
+  saveAdminCredentials(username, password);
+  msg.reply(`✅ Admin account created for **${username}**.`);
+} else {
+  msg.reply('❌ Please use:
+
+Username (yourUsername)\nPassword (yourPassword)'); } } });
 
 bot.login(process.env.DISCORD_TOKEN);
 
-// Session setup
-app.use(session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false
-}));
+// --- Express website --- const app = express(); const PORT = process.env.PORT || 3000; const __filename = fileURLToPath(import.meta.url); const __dirname = path.dirname(__filename);
 
-app.use(express.static('public'));
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
-// In-memory store for linked Discord users and created admins
-const linkedUsers = new Map();
+app.get('/health', (req, res) => { res.status(200).send('OK'); });
 
-// OAuth2 callback
-app.get('/auth/discord/callback', async (req, res) => {
-  const code = req.query.code;
-  if (!code) return res.redirect('/');
+app.listen(PORT, () => { console.log(🌐 Website is live on http://localhost:${PORT}); });
 
-  try {
-    const data = new URLSearchParams({
-      client_id: process.env.CLIENT_ID,
-      client_secret: process.env.CLIENT_SECRET,
-      grant_type: 'authorization_code',
-      code: code,
-      redirect_uri: process.env.REDIRECT_URI,
-      scope: 'identify guilds guilds.members.read'
-    });
-
-    const oauthResponse = await fetch('https://discord.com/api/oauth2/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: data
-    });
-
-    const oauthData = await oauthResponse.json();
-    const userResponse = await fetch('https://discord.com/api/users/@me', {
-      headers: { Authorization: `Bearer ${oauthData.access_token}` }
-    });
-
-    const user = await userResponse.json();
-
-    const memberResponse = await fetch(`https://discord.com/api/users/@me/guilds/${process.env.BOT_GUILD_ID}/member`, {
-      headers: { Authorization: `Bearer ${oauthData.access_token}` }
-    });
-
-    if (!memberResponse.ok) {
-      return res.send('You must be a member of the server.');
-    }
-
-    const member = await memberResponse.json();
-    const hasRole = member.roles.includes(process.env.REQUIRED_ROLE_ID);
-
-    if (!hasRole) {
-      return res.send('You do not have the required role.');
-    }
-
-    if (linkedUsers.has(user.id)) {
-      return res.send('You’ve already linked your account.');
-    }
-
-    req.session.discordId = user.id;
-    res.sendFile(path.join(__dirname, 'public/create_admin.html'));
-
-  } catch (err) {
-    console.error(err);
-    res.send('OAuth2 login failed.');
-  }
-});
-
-// Handle admin signup
-app.post('/create-admin', (req, res) => {
-  const { username, password } = req.body;
-  const discordId = req.session.discordId;
-
-  if (!discordId) return res.sendStatus(403);
-  if (linkedUsers.has(discordId)) return res.send('Already created an account.');
-
-  linkedUsers.set(discordId, { username, password });
-  res.send('Admin account created!');
-});
-
-// Start web server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Web server running on port ${PORT}`));
