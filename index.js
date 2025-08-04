@@ -1,60 +1,69 @@
-// index.js import express from 'express'; import session from 'express-session'; import bodyParser from 'body-parser'; import path from 'path'; import { fileURLToPath } from 'url'; import fs from 'fs'; import fetch from 'node-fetch'; import dotenv from 'dotenv'; import { v4 as uuidv4 } from 'uuid';
+// index.js
 
-dotenv.config();
+import express from 'express'; import session from 'express-session'; import fetch from 'node-fetch'; import path from 'path'; import { fileURLToPath } from 'url'; import crypto from 'crypto'; import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, InteractionType } from 'discord.js';
 
 const __filename = fileURLToPath(import.meta.url); const __dirname = path.dirname(__filename);
 
-const app = express(); const PORT = process.env.PORT || 3000;
+const app = express(); const PORT = process.env.PORT || 10000; const DISCORD_TOKEN = process.env.DISCORD_TOKEN; const CLIENT_ID = process.env.CLIENT_ID; const CLIENT_SECRET = process.env.CLIENT_SECRET; const REDIRECT_URI = process.env.REDIRECT_URI || 'https://kitty-ai.onrender.com/auth/discord/callback'; const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
-const BOT_TOKEN = process.env.DISCORD_TOKEN; const GUILD_ID = '1401979156727730267'; const REQUIRED_ROLE = '1401983936967610409'; const CLIENT_ID = process.env.CLIENT_ID; const CLIENT_SECRET = process.env.CLIENT_SECRET; const REDIRECT_URI = process.env.REDIRECT_URI || 'https://kitty-ai.onrender.com/auth/discord/callback';
+const GUILD_ID = '1401979156727730267'; const REQUIRED_ROLE_ID = '1401983936967610409'; const OWNER_ID = '722100931164110939';
 
-let botOnline = false; let uptimeStart = null; let downtimeStart = Date.now();
+let isBotOnline = true; let onlineSince = Date.now(); let lastDowntime = null; let unauthorizedAttempts = []; let customAdmins = []; // { discordId, username, password }
 
-const adminsPath = path.join(__dirname, 'admins.json'); const unauthPath = path.join(__dirname, 'unauth.json'); const sessions = {};
+app.use(express.static(__dirname)); app.use(express.json()); app.use(express.urlencoded({ extended: true })); app.use( session({ secret: crypto.randomBytes(32).toString('hex'), resave: false, saveUninitialized: true, }) );
 
-if (!fs.existsSync(adminsPath)) fs.writeFileSync(adminsPath, JSON.stringify([{ username: "Admin", password: "AI_KITTY" }])); if (!fs.existsSync(unauthPath)) fs.writeFileSync(unauthPath, JSON.stringify([]));
+// ROUTES app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
-// Middleware app.use(bodyParser.json()); app.use(express.static(path.join(__dirname, 'public'))); app.use(session({ secret: uuidv4(), resave: false, saveUninitialized: false, }));
+app.get('/bot-status', (req, res) => { res.json({ online: isBotOnline, uptime: isBotOnline ? Date.now() - onlineSince : 0, downtime: !isBotOnline && lastDowntime ? Date.now() - lastDowntime : 0, }); });
 
-// Bot Status Polling setInterval(async () => { try { const res = await fetch('https://discord.com/api/v10/users/@me', { headers: { Authorization: Bot ${BOT_TOKEN} } }); const online = res.ok; if (online && !botOnline) uptimeStart = Date.now(); if (!online && botOnline) downtimeStart = Date.now(); botOnline = online; } catch (e) { botOnline = false; downtimeStart = Date.now(); } }, 1000);
+app.post('/login', (req, res) => { const { username, password } = req.body; const valid = username === 'Admin' && password === 'AI_KITTY' || customAdmins.find(a => a.username === username && a.password === password); if (valid) { req.session.admin = username; res.json({ success: true }); } else { unauthorizedAttempts.push({ time: new Date(), username, password }); res.status(401).json({ success: false }); } });
 
-// API routes app.get('/bot-status', (req, res) => { const now = Date.now(); res.json({ online: botOnline, uptime: botOnline ? now - uptimeStart : 0, downtime: !botOnline ? now - downtimeStart : 0 }); });
-
-app.post('/login', (req, res) => { const { username, password } = req.body; const admins = JSON.parse(fs.readFileSync(adminsPath)); const found = admins.find(a => a.username === username && a.password === password); if (found) { req.session.authenticated = true; res.sendStatus(200); } else { const logs = JSON.parse(fs.readFileSync(unauthPath)); logs.push({ time: Date.now(), username, password }); fs.writeFileSync(unauthPath, JSON.stringify(logs)); res.sendStatus(403); } });
-
-app.get('/unauthorized-attempts', (req, res) => { if (!req.session.authenticated) return res.sendStatus(403); const logs = JSON.parse(fs.readFileSync(unauthPath)); res.json(logs); });
+app.get('/unauthorized-attempts', (req, res) => { if (!req.session.admin) return res.sendStatus(401); res.json(unauthorizedAttempts); });
 
 app.get('/logout', (req, res) => { req.session.destroy(() => res.redirect('/')); });
 
-// OAuth2 app.get('/auth/discord', (req, res) => { const params = new URLSearchParams({ client_id: CLIENT_ID, redirect_uri: REDIRECT_URI, response_type: 'code', scope: 'identify guilds guilds.members.read' }); res.redirect(https://discord.com/oauth2/authorize?${params.toString()}); });
+// DISCORD OAUTH2 LINK app.get('/auth/discord', (req, res) => { const url = https://discord.com/api/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=identify+guilds+guilds.members.read; res.redirect(url); });
 
-app.get('/auth/discord/callback', async (req, res) => { const code = req.query.code; if (!code) return res.redirect('/?error=missing_code');
+app.get('/auth/discord/callback', async (req, res) => { const code = req.query.code; try { const tokenResponse = await fetch('https://discord.com/api/oauth2/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, code, grant_type: 'authorization_code', redirect_uri: REDIRECT_URI, scope: 'identify guilds guilds.members.read' }) }); const token = await tokenResponse.json();
 
-try { const tokenRes = await fetch('https://discord.com/api/oauth2/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI }) }); const tokenData = await tokenRes.json(); const userRes = await fetch('https://discord.com/api/users/@me', { headers: { Authorization: Bearer ${tokenData.access_token} } }); const user = await userRes.json();
-
-const guildMemberRes = await fetch(`https://discord.com/api/users/@me/guilds/${GUILD_ID}/member`, {
-  headers: { Authorization: `Bearer ${tokenData.access_token}` }
+const userResponse = await fetch('https://discord.com/api/users/@me', {
+  headers: { Authorization: `Bearer ${token.access_token}` }
 });
+const user = await userResponse.json();
 
-if (!guildMemberRes.ok) return res.redirect('/?error=not_in_server');
+const memberRes = await fetch(`https://discord.com/api/users/@me/guilds/${GUILD_ID}/member`, {
+  headers: { Authorization: `Bearer ${token.access_token}` }
+});
+const member = await memberRes.json();
 
-const member = await guildMemberRes.json();
-const hasRole = member.roles.includes(REQUIRED_ROLE);
-if (!hasRole) return res.redirect('/?error=missing_role');
+if (member.roles.includes(REQUIRED_ROLE_ID)) {
+  if (customAdmins.find(a => a.discordId === user.id)) {
+    res.redirect('/?linked=true&status=exists');
+  } else {
+    const newUser = crypto.randomBytes(4).toString('hex');
+    const newPass = crypto.randomBytes(3).toString('hex');
+    customAdmins.push({ discordId: user.id, username: newUser, password: newPass });
+    res.redirect(`/?linked=true&user=${newUser}&pass=${newPass}`);
+  }
+} else {
+  res.redirect('/?linked=false&error=missing_role');
+}
 
-const admins = JSON.parse(fs.readFileSync(adminsPath));
-const alreadyLinked = admins.find(a => a.discord_id === user.id);
-if (alreadyLinked) return res.redirect('/?status=exists');
+} catch (e) { console.error('OAuth error:', e); res.redirect('/?linked=false&error=oauth'); } });
 
-const username = [...Array(7)].map(() => Math.random().toString(36)[2]).join('');
-const password = [...Array(6)].map(() => Math.random().toString(36)[2]).join('');
-admins.push({ username, password, discord_id: user.id });
-fs.writeFileSync(adminsPath, JSON.stringify(admins));
-res.redirect(`/?linked=true&user=${username}&pass=${password}`);
+// DISCORD BOT const bot = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-} catch (err) { console.error(err); res.redirect('/?error=internal_error'); } });
+const commands = [ new SlashCommandBuilder().setName('ask').setDescription('Ask the AI a question').addStringOption(option => option.setName('question').setDescription('Your question').setRequired(true)), new SlashCommandBuilder().setName('create_acc').setDescription('Create admin credentials (owner only)') ].map(cmd => cmd.toJSON());
 
-app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'public/index.html')); });
+const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN); (async () => { try { await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands }); console.log('✅ Slash commands registered'); } catch (err) { console.error('❌ Command registration failed:', err); } })();
 
-app.listen(PORT, () => console.log(Kitty AI running on port ${PORT}));
+bot.on('ready', () => { console.log(🤖 Logged in as ${bot.user.tag}); isBotOnline = true; onlineSince = Date.now(); });
+
+bot.on('interactionCreate', async interaction => { if (interaction.type !== InteractionType.ApplicationCommand) return; try { if (interaction.commandName === 'ask') { await interaction.deferReply(); const question = interaction.options.getString('question'); const response = await fetch('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', headers: { 'Authorization': Bearer ${OPENROUTER_API_KEY}, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'openrouter/mistral-7b-instruct', messages: [ { role: 'system', content: 'You are a helpful assistant.' }, { role: 'user', content: question } ] }) }); const data = await response.json(); if (data.choices?.length > 0) { await interaction.editReply(data.choices[0].message.content); } else { await interaction.editReply('⚠️ No response from AI.'); } } else if (interaction.commandName === 'create_acc') { if (interaction.user.id !== OWNER_ID) { await interaction.reply({ content: '⛔ You do not have permission to run this command.', ephemeral: true }); return; } const user = crypto.randomBytes(4).toString('hex'); const pass = crypto.randomBytes(3).toString('hex'); customAdmins.push({ username: user, password: pass }); await interaction.reply({ content: ✅ Admin created:\n\n**Username:** \${user}`\nPassword: `${pass}``, ephemeral: true }); } } catch (err) { console.error('Interaction error:', err); try { await interaction.editReply('❌ Something went wrong.'); } catch {} } });
+
+bot.on('error', err => { console.error('Bot error:', err); isBotOnline = false; lastDowntime = Date.now(); });
+
+bot.login(DISCORD_TOKEN);
+
+app.listen(PORT, () => console.log(🚀 Server running on port ${PORT}));
 
