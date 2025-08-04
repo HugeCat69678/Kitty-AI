@@ -1,138 +1,139 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Bot Status</title>
   <style>
     body {
       margin: 0;
-      font-family: 'Segoe UI', sans-serif;
-      background: linear-gradient(135deg, #1f1c2c, #928dab);
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea, #764ba2);
       color: white;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      animation: fadeIn 1.2s ease;
-    }
-    @keyframes fadeIn {
-      from {opacity: 0; transform: translateY(20px);}
-      to {opacity: 1; transform: translateY(0);}
-    }
-    h1 {
-      font-size: 3rem;
-      margin-bottom: 1rem;
-    }
-    .status {
-      font-size: 2rem;
-      margin: 1rem;
-    }
-    .uptime {
-      font-size: 1.2rem;
-    }
-    .login-form {
-      margin-top: 2rem;
-      background: rgba(0,0,0,0.3);
-      padding: 20px;
-      border-radius: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      width: 300px;
-      animation: fadeIn 1.5s ease;
-    }
-    input, button {
-      padding: 10px;
-      font-size: 1rem;
-      border: none;
-      border-radius: 6px;
-    }
-    button {
-      background: #5b5aa2;
-      color: white;
-      cursor: pointer;
-      transition: background 0.3s;
-    }
-    button:hover {
-      background: #7b7acf;
-    }
-    .admin-panel {
-      margin-top: 2rem;
-      text-align: center;
-    }
+      animation: fadeIn 2s ease-in;
+    }@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+h1 {
+  margin-bottom: 20px;
+}
+
+.status {
+  font-size: 1.5em;
+  margin-bottom: 30px;
+}
+
+.login, .dashboard {
+  background-color: rgba(0, 0, 0, 0.3);
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+
+input, button {
+  padding: 10px;
+  margin-top: 10px;
+  font-size: 1em;
+  border: none;
+  border-radius: 5px;
+}
+
+input {
+  width: 100%;
+}
+
+button {
+  background-color: #22c55e;
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+button:hover {
+  background-color: #16a34a;
+}
+
+.error {
+  color: #f87171;
+  margin-top: 10px;
+}
+
   </style>
 </head>
 <body>
-  <h1>🤖 AI Bot Status</h1>
-  <div class="status" id="bot-status">Loading...</div>
-  <div class="uptime" id="uptime-info"></div>
-
-  <form class="login-form" id="login-form">
-    <input type="text" name="username" placeholder="Admin Username" required />
-    <input type="password" name="password" placeholder="Admin Password" required />
-    <button type="submit">Login</button>
-    <div id="login-error" style="color: red; display: none;">Invalid credentials</div>
-  </form>
-
-  <div class="admin-panel" id="admin-panel" style="display: none;">
-    <h2>🛠️ Admin Dashboard</h2>
-    <p id="uptime-detail"></p>
-    <p id="downtime-detail"></p>
-  </div>
-
-  <script>
-    const statusEl = document.getElementById('bot-status');
-    const uptimeInfoEl = document.getElementById('uptime-info');
-    const adminPanel = document.getElementById('admin-panel');
-    const uptimeDetail = document.getElementById('uptime-detail');
-    const downtimeDetail = document.getElementById('downtime-detail');
-
-    function formatTime(ms) {
-      const totalSec = Math.floor(ms / 1000);
-      const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
-      const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
-      const s = String(totalSec % 60).padStart(2, '0');
-      return `${h}:${m}:${s}`;
-    }
-
-    async function fetchStatus() {
+  <h1>AI Bot Status</h1>
+  <div class="status" id="status">Checking...</div>  <div class="login" id="login-box">
+    <h2>Admin Login</h2>
+    <input type="text" id="username" placeholder="Username"><br>
+    <input type="password" id="password" placeholder="Password"><br>
+    <button onclick="login()">Login</button>
+    <div class="error" id="error"></div>
+  </div>  <div class="dashboard" id="admin-box" style="display: none">
+    <h2>Admin Dashboard</h2>
+    <p><strong>🟢 Online for:</strong> <span id="uptime">--:--:--</span></p>
+    <p><strong>🔴 Offline for:</strong> <span id="downtime">--:--:--</span></p>
+    <p><strong>📝 Last login:</strong> <span id="last-login"></span></p>
+    <button onclick="logout()">Logout</button>
+  </div>  <script>
+    async function updateStatus() {
       const res = await fetch('/bot-status');
       const data = await res.json();
-      statusEl.textContent = data.online ? '🟢 Online' : '🔴 Offline';
-      uptimeInfoEl.textContent = data.online 
-        ? `Uptime: ${formatTime(data.uptime)}`
-        : `Downtime: ${formatTime(data.downtime)}`;
-      if (adminPanel.style.display === 'block') {
-        uptimeDetail.textContent = `Online for: ${formatTime(data.uptime)}`;
-        downtimeDetail.textContent = `Offline for: ${formatTime(data.downtime)}`;
+      const statusText = data.online ? '🟢 Online' : '🔴 Offline';
+      document.getElementById('status').textContent = statusText;
+      if (data.online) {
+        document.getElementById('uptime').textContent = formatTime(data.uptime);
+        document.getElementById('downtime').textContent = '00:00:00';
+      } else {
+        document.getElementById('uptime').textContent = '00:00:00';
+        document.getElementById('downtime').textContent = formatTime(data.downtime);
       }
     }
 
-    fetchStatus();
-    setInterval(fetchStatus, 5000);
+    function formatTime(ms) {
+      const totalSeconds = Math.floor(ms / 1000);
+      const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+      const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+      const seconds = String(totalSeconds % 60).padStart(2, '0');
+      return `${hours}:${minutes}:${seconds}`;
+    }
 
-    const form = document.getElementById('login-form');
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const formData = new FormData(form);
+    async function login() {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const errorBox = document.getElementById('error');
+      errorBox.textContent = '';
+
       const res = await fetch('/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: formData.get('username'),
-          password: formData.get('password'),
-        }),
+        body: JSON.stringify({ username, password })
       });
+
       if (res.ok) {
-        form.style.display = 'none';
-        adminPanel.style.display = 'block';
-        fetchStatus();
+        document.getElementById('login-box').style.display = 'none';
+        document.getElementById('admin-box').style.display = 'block';
+        document.getElementById('last-login').textContent = new Date().toLocaleString();
+        updateStatus();
+        setInterval(updateStatus, 1000);
       } else {
-        document.getElementById('login-error').style.display = 'block';
+        errorBox.textContent = '❌ Incorrect username or password.';
       }
-    });
-  </script>
-</body>
+    }
+
+    function logout() {
+      document.getElementById('admin-box').style.display = 'none';
+      document.getElementById('login-box').style.display = 'block';
+      document.getElementById('username').value = '';
+      document.getElementById('password').value = '';
+      document.getElementById('error').textContent = '';
+    }
+
+    updateStatus();
+  </script></body>
 </html>
