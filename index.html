@@ -1,153 +1,232 @@
-<!DOCTYPE html><html lang="en">
+<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Kitty Admin Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kitty AI Bot Dashboard</title>
   <style>
     body {
       margin: 0;
       font-family: Arial, sans-serif;
-      background: linear-gradient(135deg, #1f1c2c, #928dab);
+      background: linear-gradient(to right, #141e30, #243b55);
       color: white;
-      overflow-x: hidden;
     }
+
     header {
-      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: rgba(0, 0, 0, 0.4);
       padding: 1rem;
-      text-align: center;
+    }
+
+    .sidebar-toggle {
       font-size: 1.5rem;
+      cursor: pointer;
+      display: none;
     }
-    #status, #uptime {
-      text-align: center;
-      margin: 1rem auto;
-      font-size: 1.2rem;
-    }
-    .login, .link-info {
-      text-align: center;
-      margin-top: 2rem;
-    }
-    .hidden { display: none; }
-    .sidebar {
+
+    nav {
+      display: none;
+      flex-direction: column;
+      background-color: #1c1c1c;
       position: fixed;
       top: 0;
-      left: -250px;
-      width: 250px;
-      height: 100%;
-      background-color: rgba(0, 0, 0, 0.9);
-      padding: 1rem;
-      transition: left 0.3s ease;
-    }
-    .sidebar.open {
       left: 0;
+      width: 220px;
+      height: 100%;
+      padding-top: 60px;
+      z-index: 10;
+      transition: transform 0.3s ease;
+      transform: translateX(-100%);
     }
-    .sidebar button {
-      display: block;
-      margin: 1rem 0;
-      background: none;
+
+    nav.show {
+      display: flex;
+      transform: translateX(0);
+    }
+
+    nav a {
+      padding: 1rem;
       color: white;
-      border: none;
-      font-size: 1.1rem;
-      cursor: pointer;
+      text-decoration: none;
+      border-bottom: 1px solid #333;
     }
-    #sidebarToggle {
-      position: fixed;
-      top: 1rem;
-      left: 1rem;
-      font-size: 1.5rem;
-      cursor: pointer;
-      background: none;
+
+    .container {
+      padding: 2rem;
+    }
+
+    .button {
+      padding: 10px 20px;
+      margin-top: 10px;
+      background: #4e54c8;
+      border: none;
       color: white;
-      border: none;
-      z-index: 999;
+      cursor: pointer;
+      border-radius: 5px;
+      transition: background 0.3s ease;
     }
-    .attempts {
-      margin-top: 1rem;
+
+    .button:hover {
+      background: #565bdb;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .status-box {
+      margin-top: 2rem;
       padding: 1rem;
       background: rgba(255, 255, 255, 0.1);
       border-radius: 8px;
-      max-height: 300px;
-      overflow-y: auto;
+    }
+
+    .input-group {
+      margin-top: 1rem;
+    }
+
+    input {
+      padding: 0.5rem;
+      margin-top: 0.5rem;
+      border-radius: 5px;
+      border: none;
+    }
+
+    .error {
+      color: red;
+      margin-top: 10px;
     }
   </style>
 </head>
 <body>
-  <header>AI Kitty Admin Panel</header>
-  <button id="sidebarToggle">☰</button>
-  <div class="sidebar" id="sidebar">
-    <button onclick="fetchAttempts()">❌ Unauthorized Log Ins</button>
-    <button onclick="logout()">🚪 Log Off</button>
-  </div>  <div id="status">Checking bot status...</div>
-  <div id="uptime"></div>  <div class="login" id="loginForm">
-    <h3>Admin Login</h3>
-    <input type="text" id="username" placeholder="Username"><br><br>
-    <input type="password" id="password" placeholder="Password"><br><br>
-    <button onclick="login()">Login</button>
-    <p id="loginStatus"></p>
-  </div>  <div class="link-info">
-    <a href="/auth/discord"><button>🔗 Link Discord Account</button></a>
-  </div>  <div class="attempts hidden" id="unauthorizedBox">
-    <h4>Unauthorized Attempts</h4>
-    <div id="attemptList"></div>
-  </div>  <script>
+
+  <header>
+    <div class="sidebar-toggle" onclick="toggleSidebar()">☰</div>
+    <h1>Kitty AI Dashboard</h1>
+    <a class="button" href="/auth/discord">Link Discord</a>
+  </header>
+
+  <nav id="sidebar">
+    <a href="#" onclick="loadUnauthorized()">❌ Unauthorized Log Ins</a>
+    <a href="/logout">🚪 Log Off</a>
+  </nav>
+
+  <div class="container">
+    <div id="login-form">
+      <h2>Admin Login</h2>
+      <div class="input-group">
+        <label>Username:</label><br/>
+        <input type="text" id="username" />
+      </div>
+      <div class="input-group">
+        <label>Password:</label><br/>
+        <input type="password" id="password" />
+      </div>
+      <button class="button" onclick="login()">Login</button>
+      <div id="login-error" class="error hidden">Incorrect credentials!</div>
+    </div>
+
+    <div id="admin-dashboard" class="hidden">
+      <h2>Bot Status</h2>
+      <div class="status-box">
+        <p><strong>Status:</strong> <span id="bot-status">Loading...</span></p>
+        <p><strong>Uptime:</strong> <span id="uptime">--:--:--</span></p>
+        <p><strong>Downtime:</strong> <span id="downtime">--:--:--</span></p>
+      </div>
+
+      <div id="unauth-list" class="hidden">
+        <h3>Unauthorized Attempts</h3>
+        <ul id="unauthorized-log"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let isLoggedIn = false;
     const sidebar = document.getElementById('sidebar');
-    document.getElementById('sidebarToggle').onclick = () => {
-      sidebar.classList.toggle('open');
-    };
+
+    function toggleSidebar() {
+      sidebar.classList.toggle('show');
+    }
 
     async function login() {
-      const username = document.getElementById('username').value;
-      const password = document.getElementById('password').value;
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value.trim();
       const res = await fetch('/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
+
       if (res.ok) {
-        document.getElementById('loginForm').classList.add('hidden');
-        sidebar.classList.add('open');
+        isLoggedIn = true;
+        document.getElementById('login-form').classList.add('hidden');
+        document.getElementById('admin-dashboard').classList.remove('hidden');
+        startStatusPolling();
       } else {
-        document.getElementById('loginStatus').innerText = '❌ Incorrect credentials';
+        document.getElementById('login-error').classList.remove('hidden');
       }
     }
 
-    async function logout() {
-      await fetch('/logout');
-      location.reload();
+    function formatTime(ms) {
+      const totalSeconds = Math.floor(ms / 1000);
+      const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+      const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+      const s = String(totalSeconds % 60).padStart(2, '0');
+      return `${h}:${m}:${s}`;
     }
 
-    async function fetchAttempts() {
-      const res = await fetch('/unauthorized-attempts');
-      if (res.ok) {
-        const attempts = await res.json();
-        const container = document.getElementById('attemptList');
-        container.innerHTML = '';
-        attempts.forEach(a => {
-          container.innerHTML += `<p>🕒 ${new Date(a.time).toLocaleTimeString()} - Tried \
-          <b>${a.username}</b> with <i>${a.password}</i></p>`;
-        });
-        document.getElementById('unauthorizedBox').classList.remove('hidden');
-      }
-    }
-
-    function updateUptime(ms) {
-      const seconds = Math.floor(ms / 1000);
-      const h = String(Math.floor(seconds / 3600)).padStart(2, '0');
-      const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-      const s = String(seconds % 60).padStart(2, '0');
-      document.getElementById('uptime').innerText = `⏱ Uptime: ${h}:${m}:${s}`;
-    }
-
-    async function pollStatus() {
-      const res = await fetch('/bot-status');
-      const data = await res.json();
-      document.getElementById('status').innerText = data.online ? '🟢 Bot is Online' : '🔴 Bot is Offline';
-      let uptime = data.uptime;
-      setInterval(() => {
-        uptime += 1000;
-        updateUptime(uptime);
+    function startStatusPolling() {
+      setInterval(async () => {
+        const res = await fetch('/bot-status');
+        const data = await res.json();
+        document.getElementById('bot-status').textContent = data.online ? '🟢 Online' : '🔴 Offline';
+        document.getElementById('uptime').textContent = formatTime(data.uptime);
+        document.getElementById('downtime').textContent = formatTime(data.downtime);
       }, 1000);
     }
 
-    pollStatus();
-  </script></body>
+    async function loadUnauthorized() {
+      if (!isLoggedIn) return;
+      document.getElementById('unauth-list').classList.remove('hidden');
+      const res = await fetch('/unauthorized-attempts');
+      const logs = await res.json();
+      const list = document.getElementById('unauthorized-log');
+      list.innerHTML = '';
+      logs.forEach(log => {
+        const li = document.createElement('li');
+        li.textContent = `Time: ${new Date(log.time).toLocaleTimeString()} - Tried: ${log.username} / ${log.password}`;
+        list.appendChild(li);
+      });
+    }
+
+    // Auto-login if already in session (on reload)
+    window.onload = async () => {
+      const res = await fetch('/bot-status');
+      if (res.ok) {
+        const sessionCheck = await fetch('/unauthorized-attempts');
+        if (sessionCheck.ok) {
+          isLoggedIn = true;
+          document.getElementById('login-form').classList.add('hidden');
+          document.getElementById('admin-dashboard').classList.remove('hidden');
+          startStatusPolling();
+        }
+      }
+
+      // Check for linked credentials
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('linked') === 'true') {
+        const user = params.get('user');
+        const pass = params.get('pass');
+        alert(`✅ Linked! Your credentials:\nUsername: ${user}\nPassword: ${pass}`);
+      } else if (params.get('status') === 'exists') {
+        alert('⚠️ You have already linked your Discord account.');
+      } else if (params.get('error')) {
+        alert('❌ Linking failed: ' + params.get('error'));
+      }
+    };
+  </script>
+</body>
 </html>
