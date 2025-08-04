@@ -12,21 +12,22 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 let isOnline = true;
 let startTime = Date.now();
 
-// Discord Client
+// Initialize Discord Bot
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.once('ready', () => {
   console.log(`🐱 KITTY AI is online as ${client.user.tag}`);
 });
 
+// Handle slash commands
 client.on('interactionCreate', async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== 'ask') return;
+  if (!interaction.isChatInputCommand() || interaction.commandName !== 'ask') return;
 
   const question = interaction.options.getString('question');
-  await interaction.deferReply();
 
   try {
+    await interaction.deferReply({ ephemeral: false });
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -44,23 +45,52 @@ client.on('interactionCreate', async interaction => {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenRouter API Error:", errorText);
+      const errorBody = await response.text();
+      console.error("OpenRouter API Error:", errorBody);
       throw new Error("API Error");
     }
 
     const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content || "⚠️ Sorry, I couldn't understand that.";
-
+    const reply = data.choices?.[0]?.message?.content || "⚠️ I didn’t get a valid response.";
     await interaction.editReply(reply);
-  } catch (err) {
-    console.error("Error with AI response:", err);
-    await interaction.editReply("⚠️ Sorry, something went wrong with the AI.");
+  } catch (error) {
+    console.error("Error handling interaction:", error);
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply("⚠️ Something went wrong with the AI.");
+    } else {
+      try {
+        await interaction.reply("⚠️ Something went wrong processing your question.");
+      } catch (e) {
+        console.error("Failed to reply to interaction:", e);
+      }
+    }
     isOnline = false;
   }
 });
 
-// Express Status Page for UptimeRobot
+// Slash command registration
+(async () => {
+  const commands = [
+    new SlashCommandBuilder()
+      .setName('ask')
+      .setDescription('Ask KITTY AI a question!')
+      .addStringOption(option =>
+        option.setName('question')
+              .setDescription('What do you want to ask?')
+              .setRequired(true))
+      .toJSON()
+  ];
+
+  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+  try {
+    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+    console.log('✅ Slash command registered.');
+  } catch (err) {
+    console.error('❌ Error registering slash command:', err);
+  }
+})();
+
+// Express server for /status
 app.get('/status', (req, res) => {
   if (!isOnline) {
     return res.send(`<h1>🔴 KITTY AI Offline</h1>`);
@@ -85,27 +115,6 @@ app.get('/status', (req, res) => {
   `);
 });
 
-// Register Slash Command
-(async () => {
-  const commands = [
-    new SlashCommandBuilder()
-      .setName('ask')
-      .setDescription('Ask KITTY AI a question!')
-      .addStringOption(opt =>
-        opt.setName('question')
-          .setDescription('What do you want to ask?')
-          .setRequired(true))
-      .toJSON()
-  ];
-
-  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-  try {
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-    console.log('✅ Slash command registered.');
-  } catch (err) {
-    console.error('❌ Error registering slash command:', err);
-  }
-})();
+app.listen(port, () => console.log(`🌐 Express server running on port ${port}`));
 
 client.login(DISCORD_TOKEN);
-app.listen(port, () => console.log(`🌐 Express server listening on port ${port}`));
