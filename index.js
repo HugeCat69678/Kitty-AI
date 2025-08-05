@@ -1,106 +1,58 @@
-require('dotenv').config();
-const express = require('express');
-const session = require('express-session');
-const { Client, GatewayIntentBits, Events, Partials } = require('discord.js');
+require('dotenv').config(); const express = require('express'); const session = require('express-session'); const { Client, GatewayIntentBits, Events, Partials } = require('discord.js');
 
-const app = express();
-const port = process.env.PORT || 3000;
+const app = express(); const port = process.env.PORT || 3000;
 
-const OWNER_ID = '722100931164110939';
-const admins = [{
-  username: process.env.DEFAULT_ADMIN_USERNAME,
-  password: process.env.DEFAULT_ADMIN_PASSWORD
-}];
-const logs = [];
+const YOUR_ID = '722100931164110939'; const admins = [{ username: process.env.DEFAULT_ADMIN_USERNAME, password: process.env.DEFAULT_ADMIN_PASSWORD }]; const logs = []; let isBotReady = false;
 
-let botOnline = false;
-let uptimeStart = null;
-let totalUptime = 0;
-let totalDowntime = 0;
-let lastStatusChange = Date.now();
+app.use(express.urlencoded({ extended: true })); app.use(express.json()); app.use(session({ secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: true }));
 
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
-app.use(session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: true
-}));
+const generateHTML = (loggedIn, botStatus, logList = []) => `
 
-const renderHTML = (isAdmin = false) => {
-  const status = botOnline ? '🟢 Online' : '🔴 Offline';
-  const adminStats = isAdmin ? `
-    <h3>Uptime/Downtime</h3>
-    <p>🟢 Uptime: ${(totalUptime / 1000).toFixed(1)}s</p>
-    <p>🔴 Downtime: ${(totalDowntime / 1000).toFixed(1)}s</p>
-  ` : '';
-
-  return `<!DOCTYPE html>
-<html>
+<!DOCTYPE html><html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Kitty AI Admin Panel</title>
+  <meta charset="UTF-8" />
+  <title>KittyAI Admin</title>
   <style>
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: 'Segoe UI', sans-serif;
-      background: linear-gradient(135deg, #0f0f2b, #1f1f3d);
+      background: linear-gradient(145deg, #0f0f2b, #1a1a3c);
       color: #fff;
+      transition: background 0.5s;
     }
     header {
       background: #111;
-      padding: 1rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .logo {
-      font-size: 1.5rem;
+      padding: 1.5rem;
+      font-size: 1.8rem;
+      text-align: center;
+      font-weight: bold;
       color: #00f2ff;
-      font-weight: bold;
+      text-shadow: 0 0 5px #00f2ff;
     }
-    .hamburger {
-      font-size: 1.5rem;
-      cursor: pointer;
+    .status {
+      text-align: center;
+      margin: 1rem;
+      font-size: 1.2rem;
     }
-    .sidebar {
-      position: fixed;
-      top: 0;
-      left: -240px;
-      width: 240px;
-      height: 100%;
-      background: #222;
-      padding: 2rem 1rem;
-      transition: left 0.3s ease;
-      box-shadow: 2px 0 10px rgba(0,0,0,0.5);
-      z-index: 999;
-    }
-    .sidebar.show { left: 0; }
-    .sidebar a {
-      display: block;
-      color: #fff;
-      margin: 1.5rem 0;
-      text-decoration: none;
-      font-weight: bold;
-    }
-    .sidebar a:hover { color: #00f2ff; }
     .login {
-      max-width: 350px;
-      margin: 5rem auto;
+      max-width: 400px;
+      margin: 4rem auto;
+      background: #222;
       padding: 2rem;
-      background: #333;
       border-radius: 10px;
-      box-shadow: 0 0 20px #0008;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      animation: fade 0.6s ease-in-out;
     }
     input, button {
       width: 100%;
       padding: 0.75rem;
-      margin: 0.6rem 0;
+      margin: 0.75rem 0;
       border: none;
       border-radius: 5px;
     }
     input {
-      background: #222;
+      background: #111;
       color: #fff;
     }
     button {
@@ -108,122 +60,97 @@ const renderHTML = (isAdmin = false) => {
       color: #000;
       font-weight: bold;
       cursor: pointer;
+      transition: 0.3s ease;
     }
-    button:hover { background: #0ff; }
-    .status {
-      text-align: center;
-      font-size: 1.2rem;
-      margin-top: 2rem;
-    }
+    button:hover { background: #0ff; }@keyframes fade {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.sidebar {
+  position: fixed;
+  top: 0; left: 0;
+  width: 240px;
+  height: 100vh;
+  background: #111;
+  padding-top: 3rem;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+}
+.sidebar.show { transform: translateX(0); }
+.sidebar a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  padding: 1rem 1.5rem;
+  text-decoration: none;
+  font-weight: bold;
+  transition: background 0.2s;
+}
+.sidebar a:hover { background: #222; }
+.hamburger {
+  position: absolute;
+  top: 1rem; left: 1rem;
+  font-size: 2rem;
+  cursor: pointer;
+  user-select: none;
+}
+.log-output {
+  margin-left: 260px;
+  padding: 2rem;
+}
+
   </style>
 </head>
 <body>
-  <header>
-    <div class="logo">Kitty AI</div>
-    <div class="hamburger" onclick="toggleSidebar()">☰</div>
-  </header>
-
-  <div class="sidebar" id="sidebar">
-    <a href="#" onclick="showLogs()">Login Requests</a>
-    <a href="/logout">Logout</a>
-  </div>
-
-  <div id="content">
-    ${isAdmin ? '' : `
-      <div class="login">
-        <form method="POST" action="/login">
-          <input name="username" placeholder="Username" required />
-          <input name="password" type="password" placeholder="Password" required />
-          <button type="submit">Login</button>
-        </form>
-      </div>
-    `}
-    <div class="status">
-      <p>Bot Status: ${status}</p>
-      ${adminStats}
+  <header>KittyAI — Welcome</header>
+  <div class="status">Bot status: ${isBotReady ? '🟢 Online' : '🔴 Offline'}</div>
+  ${!loggedIn ? `
+    <div class="login">
+      <form method="POST" action="/login">
+        <input name="username" placeholder="Username" required />
+        <input name="password" placeholder="Password" type="password" required />
+        <button type="submit">Login</button>
+      </form>
     </div>
-  </div>
-
+  ` : `
+    <div class="hamburger" onclick="toggleSidebar()">☰</div>
+    <div class="sidebar" id="sidebar">
+      <a href="#" onclick="showLogs()">
+        📜 Login Requests
+      </a>
+      <a href="/logout">
+        🚪 Logout
+      </a>
+    </div>
+    <div class="log-output" id="logOutput"></div>
+  `}
   <script>
     function toggleSidebar() {
       document.getElementById('sidebar').classList.toggle('show');
     }
     function showLogs() {
       fetch('/logs').then(r => r.json()).then(data => {
-        const output = data.map(x => \`\${x.time} — \${x.username}\`).join('\\n');
-        alert('Login Requests:\\n' + output);
+        const list = data.map(x => `<div>🕒 ${x.time} — attempted: <b>${x.username}</b></div>`).join('');
+        document.getElementById('logOutput').innerHTML = list;
       });
     }
   </script>
 </body>
-</html>`;
-};
+</html>
+`;app.get('/', (req, res) => { res.send(generateHTML(!!req.session.admin, isBotReady)); });
 
-app.get('/', (req, res) => {
-  res.send(renderHTML(req.session.admin));
-});
+app.post('/login', (req, res) => { const { username, password } = req.body; const found = admins.find(a => a.username === username && a.password === password); if (found) { req.session.admin = username; logs.push({ username, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }) }); return res.redirect('/'); } res.send('Invalid credentials'); });
 
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  const found = admins.find(a => a.username === username && a.password === password);
-  if (found) {
-    req.session.admin = username;
-    logs.push({ username, time: new Date().toLocaleString() });
-    return res.redirect('/');
-  }
-  res.send('Invalid credentials');
-});
+app.get('/logs', (req, res) => { if (!req.session.admin) return res.status(403).send('Forbidden'); res.json(logs); });
 
-app.get('/logs', (req, res) => {
-  if (!req.session.admin) return res.status(403).send('Forbidden');
-  res.json(logs);
-});
+app.get('/logout', (req, res) => { req.session.destroy(() => res.redirect('/')); });
 
-app.get('/logout', (req, res) => {
-  req.session.destroy(() => res.redirect('/'));
-});
+const bot = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages, GatewayIntentBits.MessageContent], partials: [Partials.Channel] });
 
-const bot = new Client({
-  intents: [GatewayIntentBits.DirectMessages, GatewayIntentBits.MessageContent],
-  partials: [Partials.Channel]
-});
+bot.once(Events.ClientReady, () => { console.log(🤖 Bot ready: ${bot.user.tag}); isBotReady = true; });
 
-bot.once(Events.ClientReady, () => {
-  console.log(`🤖 Bot ready: ${bot.user.tag}`);
-  botOnline = true;
-  uptimeStart = Date.now();
-  lastStatusChange = Date.now();
-});
+bot.on(Events.MessageCreate, (msg) => { if (!msg.guild && msg.author.id === YOUR_ID) { const m = msg.content.match(/Username\s\s\nPassword\s*/i); if (m) { const [_, username, password] = m; if (admins.some(a => a.username === username)) return msg.reply('Username already exists.'); admins.push({ username, password }); msg.reply(✅ Admin ${username} created!); } } });
 
-bot.on(Events.MessageCreate, (msg) => {
-  if (!msg.guild && msg.author.id === OWNER_ID) {
-    const match = msg.content.match(/Username\s*\(([^)]+)\)\s*[\r\n]+Password\s*\(([^)]+)\)/i);
-    if (match) {
-      const [_, username, password] = match;
-      if (admins.some(a => a.username === username)) {
-        return msg.reply('⚠️ That username already exists.');
-      }
-      admins.push({ username, password });
-      msg.reply(`✅ Admin ${username} created!`);
-    }
-  }
-});
+bot.login(process.env.DISCORD_TOKEN); app.listen(port, () => console.log(🌐 Server running at http://localhost:${port}));
 
-bot.on(Events.ClientUnavailable, () => {
-  botOnline = false;
-  const now = Date.now();
-  totalUptime += now - lastStatusChange;
-  lastStatusChange = now;
-});
-
-bot.on(Events.Error, () => {
-  botOnline = false;
-  const now = Date.now();
-  totalUptime += now - lastStatusChange;
-  lastStatusChange = now;
-});
-
-bot.login(process.env.DISCORD_TOKEN);
-app.listen(port, () => {
-  console.log(`🌐 Web running at http://localhost:${port}`);
-});
