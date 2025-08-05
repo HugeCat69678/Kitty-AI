@@ -7,15 +7,16 @@ const { Client, GatewayIntentBits, Events, Partials } = require('discord.js');
 
 const app = express();
 const port = process.env.PORT || 3000;
-
-// Admin credentials and logs
 const YOUR_ID = '722100931164110939';
+
+let botStatus = 'Offline 🔴';
+let uptimeStart = null;
+let totalDowntime = 0;
+let downtimeStart = Date.now();
+
+// Admins and login logs
 const admins = [{ username: process.env.DEFAULT_ADMIN_USERNAME, password: process.env.DEFAULT_ADMIN_PASSWORD }];
 const logs = [];
-
-let botOnline = false;
-let lastOnline = null;
-let lastOffline = null;
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -25,58 +26,74 @@ app.use(session({
   saveUninitialized: true
 }));
 
-// Serve the HTML page
+// Serve static files (index.html)
 app.get('/', (req, res) => {
-  const htmlPath = path.join(__dirname, 'index.html');
-  fs.readFile(htmlPath, 'utf8', (err, data) => {
-    if (err) return res.status(500).send('Error loading HTML');
-    const rendered = data
-      .replace('{{STATUS}}', botOnline ? '🟢 Online' : '🔴 Offline')
-      .replace('{{ADMIN}}', req.session.admin ? 'true' : 'false')
-      .replace('{{UPTIME}}', lastOnline ? lastOnline : 'N/A')
-      .replace('{{DOWNTIME}}', lastOffline ? lastOffline : 'N/A');
-    res.send(rendered);
+  fs.readFile(path.join(__dirname, 'index.html'), 'utf8', (err, html) => {
+    if (err) return res.status(500).send('Error loading page');
+    html = html.replace('{{BOT_STATUS}}', botStatus);
+
+    if (req.session.admin) {
+      const uptime = uptimeStart ? `${Math.floor((Date.now() - uptimeStart) / 1000)}s` : '0s';
+      const downtime = `${Math.floor(totalDowntime / 1000)}s`;
+      html = html.replace('{{EXTRA_PANEL}}', `
+        <div class="panel">
+          <h3>Uptime: ${uptime}</h3>
+          <h3>Downtime: ${downtime}</h3>
+        </div>
+        <script>
+          document.querySelector('.sidebar').classList.add('show');
+        </script>
+      `);
+    } else {
+      html = html.replace('{{EXTRA_PANEL}}', '');
+    }
+
+    res.send(html);
   });
 });
 
-// Handle login
+// Login POST
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const found = admins.find(a => a.username === username && a.password === password);
   if (found) {
     req.session.admin = username;
-    logs.push({ username, time: new Date().toLocaleString() });
+    logs.push({ username, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
     return res.redirect('/');
   }
   res.send('Invalid credentials');
 });
 
-// Logs (protected)
+// Login logs
 app.get('/logs', (req, res) => {
   if (!req.session.admin) return res.status(403).send('Forbidden');
   res.json(logs);
 });
 
+// Logout
 app.get('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
-// Discord Bot Setup
+// Discord Bot
 const bot = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.DirectMessages],
+  intents: [
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.MessageContent
+  ],
   partials: [Partials.Channel]
 });
 
 bot.once(Events.ClientReady, () => {
-  botOnline = true;
-  lastOnline = new Date().toLocaleString();
   console.log(`🤖 Bot ready: ${bot.user.tag}`);
-});
+  botStatus = 'Online 🟢';
+  uptimeStart = Date.now();
 
-bot.on(Events.ShardDisconnect, () => {
-  botOnline = false;
-  lastOffline = new Date().toLocaleString();
-  console.log('❌ Bot disconnected');
+  // Calculate downtime if any
+  if (downtimeStart) {
+    totalDowntime += Date.now() - downtimeStart;
+    downtimeStart = null;
+  }
 });
 
 bot.on(Events.MessageCreate, (msg) => {
@@ -93,6 +110,24 @@ bot.on(Events.MessageCreate, (msg) => {
   }
 });
 
-// Start everything
+bot.on(Events.ShardDisconnect, () => {
+  botStatus = 'Offline 🔴';
+  downtimeStart = Date.now();
+});
+
+bot.on(Events.ShardReconnecting, () => {
+  botStatus = 'Connecting 🟡';
+});
+
+bot.on(Events.ShardResume, () => {
+  botStatus = 'Online 🟢';
+  if (downtimeStart) {
+    totalDowntime += Date.now() - downtimeStart;
+    downtimeStart = null;
+  }
+});
+
 bot.login(process.env.DISCORD_TOKEN);
-app.listen(port, () => console.log(`🌐 Web running on port ${port}`));
+app.listen(port, () => {
+  console.log(`🌐 Server running at http://localhost:${port}`);
+});
