@@ -1,8 +1,9 @@
 {
   "name": "kitty-ai",
   "version": "1.0.0",
-  "description": "Kitty AI bot with dashboard",
+  "description": "Kitty AI bot and admin dashboard",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
