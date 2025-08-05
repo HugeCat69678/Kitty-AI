@@ -1,16 +1,17 @@
 {
   "name": "kitty-ai",
   "version": "1.0.0",
+  "description": "Kitty AI bot with dashboard",
   "main": "index.js",
-  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.13.0",
+    "discord.js": "^14.11.0",
+    "dotenv": "^16.3.1",
     "express": "^4.19.2",
-    "express-session": "^1.17.3",
-    "node-fetch": "^2.6.7",
-    "dotenv": "^16.3.1"
+    "express-session": "^1.17.3"
+  },
+  "engines": {
+    "node": ">=18"
   }
-}
