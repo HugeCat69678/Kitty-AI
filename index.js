@@ -2,13 +2,17 @@
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
-const fs = require('fs');
 const { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, Events } = require('discord.js');
 const bodyParser = require('body-parser');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// In-memory admin storage
+let admins = [
+  { username: process.env.DEFAULT_ADMIN_USERNAME || "Admin", password: process.env.DEFAULT_ADMIN_PASSWORD || "AI_KITTY" }
+];
 
 // Session middleware
 app.use(session({
@@ -33,7 +37,7 @@ app.get('/status', (req, res) => {
 
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
-  const admins = JSON.parse(fs.readFileSync('admins.json', 'utf-8'));
+
   const found = admins.find(u => u.username === username && u.password === password);
 
   const now = new Date();
@@ -148,21 +152,19 @@ bot.on(Events.InteractionCreate, async interaction => {
 
     const username = interaction.options.getString('username');
     const password = interaction.options.getString('password');
-    const admins = JSON.parse(fs.readFileSync('admins.json', 'utf-8'));
 
     if (admins.find(u => u.username === username)) {
       return interaction.reply({ content: 'That username already exists, nya!', ephemeral: true });
     }
 
     admins.push({ username, password });
-    fs.writeFileSync('admins.json', JSON.stringify(admins, null, 2));
     console.log(`[ADMIN] New admin account created: ${username}`);
     await interaction.reply({ content: 'Admin account created, meow~', ephemeral: true });
 
     try {
       const user = await bot.users.fetch(ADMIN_DISCORD_ID);
-      await user.send(`New admin created:
-Username: ${username}
+      await user.send(`New admin created:  
+Username: ${username}  
 Password: ${password}`);
     } catch (err) {
       console.error('[DM] Failed to send DM to admin:', err);
@@ -173,4 +175,3 @@ Password: ${password}`);
 bot.login(process.env.DISCORD_TOKEN).catch(err => {
   console.error('[BOT] Login failed:', err);
 });
-
