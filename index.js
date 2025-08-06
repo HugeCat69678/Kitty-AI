@@ -173,3 +173,4 @@ Password: ${password}`);
 bot.login(process.env.DISCORD_TOKEN).catch(err => {
   console.error('[BOT] Login failed:', err);
 });
+
