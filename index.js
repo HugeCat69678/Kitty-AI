@@ -1,160 +1,150 @@
 // Required modules
-import express from 'express';
-import session from 'express-session';
-import fs from 'fs';
-import https from 'https';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { Client, GatewayIntentBits, Partials, Events, REST, Routes, SlashCommandBuilder } from 'discord.js';
-import dotenv from 'dotenv';
-dotenv.config();
+const express = require('express');
+const session = require('express-session');
+const path = require('path');
+const fs = require('fs');
+const { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, Events } = require('discord.js');
+const bodyParser = require('body-parser');
+require('dotenv').config();
 
-// Setup constants
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Environment Variables
-const {
-  DISCORD_TOKEN,
-  CLIENT_ID,
-  BOT_GUILD_ID,
-  OPENROUTER_API_KEY,
-  SESSION_SECRET,
-  DEFAULT_ADMIN_USERNAME,
-  DEFAULT_ADMIN_PASSWORD,
-  REQUIRED_ROLE_ID,
-  REDIRECT_URI,
-  CLIENT_SECRET
-} = process.env;
-
-// Setup session middleware
+// Session middleware
 app.use(session({
-  secret: SESSION_SECRET,
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: true
 }));
 
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json());
+app.use(bodyParser.json());
 
-// Serve HTML
+// Serve index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Bot status endpoint
-let botOnline = false;
-app.get('/status', (req, res) => {
-  res.json({ online: botOnline });
-});
-
-// Login handling
-const adminAccounts = new Map();
+// Track login attempts
 const loginRequests = [];
-adminAccounts.set(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_PASSWORD);
+
+app.get('/status', (req, res) => {
+  res.json({ online: botReady });
+});
 
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
-  const success = adminAccounts.get(username) === password;
-  if (success) {
-    req.session.authenticated = true;
-    req.session.username = username;
-    const timestamp = new Date().toLocaleString('sv-SE');
-    loginRequests.push(`${timestamp} ${username}`);
+  const admins = JSON.parse(fs.readFileSync('admins.json', 'utf-8'));
+  const found = admins.find(u => u.username === username && u.password === password);
+
+  const timestamp = new Date().toISOString().replace('T', ' ').split('.')[0];
+  loginRequests.push(`${timestamp} ${username}`);
+
+  if (found) {
+    req.session.user = username;
+    return res.json({ success: true });
+  } else {
+    return res.json({ success: false });
   }
-  res.json({ success });
 });
 
 app.get('/login-requests', (req, res) => {
-  if (req.session.authenticated) {
-    res.json(loginRequests);
-  } else {
-    res.status(403).send('Forbidden');
-  }
+  res.json(loginRequests);
 });
 
-// Discord Bot Setup
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
-  ],
+// Start server
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+// Discord Bot
+const bot = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages, GatewayIntentBits.GuildMessages],
   partials: [Partials.Channel]
 });
 
-client.once(Events.ClientReady, () => {
-  console.log(`Logged in as ${client.user.tag}`);
-  botOnline = true;
+let botReady = false;
+const ADMIN_DISCORD_ID = process.env.ADMIN_DISCORD_ID;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+
+bot.once('ready', () => {
+  botReady = true;
+  console.log(`Bot logged in as ${bot.user.tag}`);
 });
 
-client.on(Events.MessageCreate, async (message) => {
-  if (message.channel.type === 1 && message.author.id === '722100931164110939') {
-    const usernameMatch = message.content.match(/Username \(([^)]+)\)/);
-    const passwordMatch = message.content.match(/Password \(([^)]+)\)/);
-    if (usernameMatch && passwordMatch) {
-      const username = usernameMatch[1];
-      const password = passwordMatch[1];
-      if (!adminAccounts.has(username)) {
-        adminAccounts.set(username, password);
-        message.reply(`Admin account created for ${username}`);
-      } else {
-        message.reply(`Username ${username} already exists.`);
-      }
-    }
+// Slash commands
+const commands = [
+  new SlashCommandBuilder()
+    .setName('ask')
+    .setDescription('Ask the KittyAI something!')
+    .addStringOption(option =>
+      option.setName('question')
+        .setDescription('Your question')
+        .setRequired(true))
+];
+
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+
+(async () => {
+  try {
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commands }
+    );
+    console.log('Slash commands registered.');
+  } catch (err) {
+    console.error('Error registering slash commands:', err);
   }
-});
+})();
 
-const askCommand = new SlashCommandBuilder()
-  .setName('ask')
-  .setDescription('Ask the AI a question')
-  .addStringOption(option =>
-    option.setName('question').setDescription('Your question').setRequired(true));
-
-client.on(Events.InteractionCreate, async (interaction) => {
+bot.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
+
   if (interaction.commandName === 'ask') {
     const question = interaction.options.getString('question');
+    await interaction.deferReply();
     try {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'mistralai/mistral-7b-instruct',
-          messages: [{ role: 'user', content: question }]
+          model: 'openai/gpt-3.5-turbo',
+          messages: [
+            { role: 'system', content: 'You are a helpful assistant... with a cat-tastic purr-sonality!' },
+            { role: 'user', content: question }
+          ]
         })
       });
-      const result = await response.json();
-      const content = result.choices?.[0]?.message?.content || 'No response';
-      await interaction.reply(content);
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content || 'Meow... I didn’t quite get that.';
+      await interaction.editReply(reply);
     } catch (err) {
       console.error(err);
-      await interaction.reply('Failed to get response from AI.');
+      await interaction.editReply('Nyaa~ Something went wrong, sorry!');
     }
   }
 });
 
-(async () => {
-  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-  try {
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, BOT_GUILD_ID), {
-      body: [askCommand.toJSON()]
-    });
-    console.log('Slash command registered');
-  } catch (err) {
-    console.error('Error registering command:', err);
+// DM-based admin account creation
+bot.on('messageCreate', msg => {
+  if (!msg.guild && msg.author.id === ADMIN_DISCORD_ID) {
+    const match = msg.content.match(/^!u\s*\(([^)]+)\)\s*p\s*\(([^)]+)\)/);
+    if (match) {
+      const username = match[1].trim();
+      const password = match[2].trim();
+      const admins = JSON.parse(fs.readFileSync('admins.json', 'utf-8'));
+
+      if (admins.find(u => u.username === username)) {
+        return msg.reply('That username already exists.');
+      }
+
+      admins.push({ username, password });
+      fs.writeFileSync('admins.json', JSON.stringify(admins, null, 2));
+      msg.reply('Created!');
+    }
   }
-})();
-
-client.login(DISCORD_TOKEN);
-
-// Start the Express server
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
 });
+
+bot.login(process.env.DISCORD_TOKEN);
