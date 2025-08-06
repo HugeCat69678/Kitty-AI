@@ -36,8 +36,10 @@ app.post('/login', (req, res) => {
   const admins = JSON.parse(fs.readFileSync('admins.json', 'utf-8'));
   const found = admins.find(u => u.username === username && u.password === password);
 
-  const timestamp = new Date().toISOString().replace('T', ' ').split('.')[0];
+  const now = new Date();
+  const timestamp = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   loginRequests.push(`${timestamp} ${username}`);
+  console.log(`[LOGIN] Attempt at ${timestamp} with username: ${username}`);
 
   if (found) {
     req.session.user = username;
@@ -101,6 +103,7 @@ bot.on(Events.InteractionCreate, async interaction => {
 
   if (interaction.commandName === 'ask') {
     const question = interaction.options.getString('question');
+    console.log(`[SLASH] /ask received: ${question}`);
     await interaction.deferReply();
     try {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -112,16 +115,17 @@ bot.on(Events.InteractionCreate, async interaction => {
         body: JSON.stringify({
           model: 'openai/gpt-3.5-turbo',
           messages: [
-            { role: 'system', content: 'You are a helpful assistant... with a cat-tastic purr-sonality!' },
+            { role: 'system', content: 'You are KittyAI, a playful and purr-fectly helpful cat assistant!' },
             { role: 'user', content: question }
           ]
         })
       });
       const data = await response.json();
+      console.log('[AI] Response received:', data);
       const reply = data.choices?.[0]?.message?.content || 'Meow... I didn’t quite get that.';
       await interaction.editReply(reply);
     } catch (err) {
-      console.error(err);
+      console.error('[AI] Error while calling OpenRouter:', err);
       await interaction.editReply('Nyaa~ Something went wrong, sorry!');
     }
   }
@@ -130,6 +134,7 @@ bot.on(Events.InteractionCreate, async interaction => {
 // DM-based admin account creation
 bot.on('messageCreate', msg => {
   if (!msg.guild && msg.author.id === ADMIN_DISCORD_ID) {
+    console.log('[DM] Message from admin:', msg.content);
     const match = msg.content.match(/^!u\s*\(([^)]+)\)\s*p\s*\(([^)]+)\)/);
     if (match) {
       const username = match[1].trim();
@@ -137,14 +142,20 @@ bot.on('messageCreate', msg => {
       const admins = JSON.parse(fs.readFileSync('admins.json', 'utf-8'));
 
       if (admins.find(u => u.username === username)) {
-        return msg.reply('That username already exists.');
+        msg.reply('That username already exists.');
+        return;
       }
 
       admins.push({ username, password });
       fs.writeFileSync('admins.json', JSON.stringify(admins, null, 2));
+      console.log(`[ADMIN] New admin account created: ${username}`);
       msg.reply('Created!');
+    } else {
+      console.log('[DM] Invalid format.');
     }
   }
 });
 
-bot.login(process.env.DISCORD_TOKEN);
+bot.login(process.env.DISCORD_TOKEN).catch(err => {
+  console.error('[BOT] Login failed:', err);
+});
