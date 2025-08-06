@@ -4,15 +4,26 @@ const session = require('express-session');
 const path = require('path');
 const { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, Events } = require('discord.js');
 const bodyParser = require('body-parser');
+const Database = require('better-sqlite3');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// In-memory admin storage
-let admins = [
-  { username: process.env.DEFAULT_ADMIN_USERNAME || "Admin", password: process.env.DEFAULT_ADMIN_PASSWORD || "AI_KITTY" }
-];
+// Database setup
+const db = new Database('./admins.db');
+db.prepare(`CREATE TABLE IF NOT EXISTS admins (
+  username TEXT PRIMARY KEY,
+  password TEXT NOT NULL
+)`).run();
+
+const adminCount = db.prepare('SELECT COUNT(*) AS count FROM admins').get().count;
+if (adminCount === 0) {
+  db.prepare('INSERT INTO admins (username, password) VALUES (?, ?)').run(
+    process.env.DEFAULT_ADMIN_USERNAME || 'Admin',
+    process.env.DEFAULT_ADMIN_PASSWORD || 'AI_KITTY'
+  );
+}
 
 // Session middleware
 app.use(session({
@@ -28,7 +39,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Track login attempts
+// Login request tracking
 const loginRequests = [];
 
 app.get('/status', (req, res) => {
@@ -38,7 +49,7 @@ app.get('/status', (req, res) => {
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
-  const found = admins.find(u => u.username === username && u.password === password);
+  const found = db.prepare('SELECT * FROM admins WHERE username = ? AND password = ?').get(username, password);
 
   const now = new Date();
   const timestamp = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -57,12 +68,11 @@ app.get('/login-requests', (req, res) => {
   res.json(loginRequests);
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// Discord Bot
+// Discord bot setup
 const bot = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages, GatewayIntentBits.GuildMessages],
   partials: [Partials.Channel]
@@ -96,7 +106,10 @@ const commands = [
     .addStringOption(option =>
       option.setName('password')
         .setDescription('New admin password')
-        .setRequired(true))
+        .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('admin-list')
+    .setDescription('List all admin usernames')
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -136,7 +149,6 @@ bot.on(Events.InteractionCreate, async interaction => {
         })
       });
       const data = await response.json();
-      console.log('[AI] Response received:', data);
       const reply = data.choices?.[0]?.message?.content || 'Meow... I didn’t quite get that.';
       await interaction.editReply(reply);
     } catch (err) {
@@ -153,22 +165,31 @@ bot.on(Events.InteractionCreate, async interaction => {
     const username = interaction.options.getString('username');
     const password = interaction.options.getString('password');
 
-    if (admins.find(u => u.username === username)) {
+    const existing = db.prepare('SELECT * FROM admins WHERE username = ?').get(username);
+    if (existing) {
       return interaction.reply({ content: 'That username already exists, nya!', ephemeral: true });
     }
 
-    admins.push({ username, password });
+    db.prepare('INSERT INTO admins (username, password) VALUES (?, ?)').run(username, password);
     console.log(`[ADMIN] New admin account created: ${username}`);
     await interaction.reply({ content: 'Admin account created, meow~', ephemeral: true });
 
     try {
       const user = await bot.users.fetch(ADMIN_DISCORD_ID);
-      await user.send(`New admin created:  
-Username: ${username}  
-Password: ${password}`);
+      await user.send(`New admin created:\nUsername: ${username}\nPassword: ${password}`);
     } catch (err) {
       console.error('[DM] Failed to send DM to admin:', err);
     }
+  }
+
+  if (interaction.commandName === 'admin-list') {
+    if (interaction.user.id !== ADMIN_DISCORD_ID) {
+      return interaction.reply({ content: 'Access denied, nya~', ephemeral: true });
+    }
+
+    const rows = db.prepare('SELECT username FROM admins').all();
+    const list = rows.map(r => r.username).join('\n') || 'No admins yet.';
+    await interaction.reply({ content: `Current admins:\n\`\`\`\n${list}\n\`\`\``, ephemeral: true });
   }
 });
 
