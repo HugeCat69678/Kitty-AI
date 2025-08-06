@@ -10,19 +10,20 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Database setup
-const db = new Database('./admins.db');
+// Initialize SQLite database
+const db = new Database('database.db');
 db.prepare(`CREATE TABLE IF NOT EXISTS admins (
   username TEXT PRIMARY KEY,
   password TEXT NOT NULL
 )`).run();
 
-const adminCount = db.prepare('SELECT COUNT(*) AS count FROM admins').get().count;
-if (adminCount === 0) {
-  db.prepare('INSERT INTO admins (username, password) VALUES (?, ?)').run(
-    process.env.DEFAULT_ADMIN_USERNAME || 'Admin',
-    process.env.DEFAULT_ADMIN_PASSWORD || 'AI_KITTY'
-  );
+// Ensure default admin exists
+const defaultUser = process.env.DEFAULT_ADMIN_USERNAME || 'Admin';
+const defaultPass = process.env.DEFAULT_ADMIN_PASSWORD || 'AI_KITTY';
+const existing = db.prepare('SELECT * FROM admins WHERE username = ?').get(defaultUser);
+if (!existing) {
+  db.prepare('INSERT INTO admins (username, password) VALUES (?, ?)').run(defaultUser, defaultPass);
+  console.log(`[DB] Default admin created: ${defaultUser}`);
 }
 
 // Session middleware
@@ -31,7 +32,6 @@ app.use(session({
   resave: false,
   saveUninitialized: true
 }));
-
 app.use(bodyParser.json());
 
 // Serve index.html
@@ -39,16 +39,11 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Login request tracking
+// Login route
 const loginRequests = [];
-
-app.get('/status', (req, res) => {
-  res.json({ online: botReady });
-});
 
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
-
   const found = db.prepare('SELECT * FROM admins WHERE username = ? AND password = ?').get(username, password);
 
   const now = new Date();
@@ -58,9 +53,9 @@ app.post('/login', (req, res) => {
 
   if (found) {
     req.session.user = username;
-    return res.json({ success: true });
+    res.json({ success: true });
   } else {
-    return res.json({ success: false });
+    res.json({ success: false });
   }
 });
 
@@ -68,11 +63,15 @@ app.get('/login-requests', (req, res) => {
   res.json(loginRequests);
 });
 
+app.get('/status', (req, res) => {
+  res.json({ online: botReady });
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
-// Discord bot setup
+// Discord Bot
 const bot = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages, GatewayIntentBits.GuildMessages],
   partials: [Partials.Channel]
@@ -82,12 +81,7 @@ let botReady = false;
 const ADMIN_DISCORD_ID = process.env.ADMIN_DISCORD_ID;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
-bot.once('ready', () => {
-  botReady = true;
-  console.log(`Bot logged in as ${bot.user.tag}`);
-});
-
-// Slash commands
+// Register slash commands
 const commands = [
   new SlashCommandBuilder()
     .setName('ask')
@@ -106,32 +100,34 @@ const commands = [
     .addStringOption(option =>
       option.setName('password')
         .setDescription('New admin password')
-        .setRequired(true)),
-  new SlashCommandBuilder()
-    .setName('admin-list')
-    .setDescription('List all admin usernames')
+        .setRequired(true))
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-
 (async () => {
   try {
     await rest.put(
       Routes.applicationCommands(process.env.CLIENT_ID),
       { body: commands }
     );
-    console.log('Slash commands registered.');
+    console.log('[DISCORD] Slash commands registered.');
   } catch (err) {
-    console.error('Error registering slash commands:', err);
+    console.error('[DISCORD] Slash command registration failed:', err);
   }
 })();
+
+bot.once('ready', () => {
+  botReady = true;
+  console.log(`Bot logged in as ${bot.user.tag}`);
+});
 
 bot.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
+  // /ask command
   if (interaction.commandName === 'ask') {
     const question = interaction.options.getString('question');
-    console.log(`[SLASH] /ask received: ${question}`);
+    console.log(`[ASK] Received: ${question}`);
     await interaction.deferReply();
     try {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -149,47 +145,41 @@ bot.on(Events.InteractionCreate, async interaction => {
         })
       });
       const data = await response.json();
+      console.log('[AI] Response:', data);
       const reply = data.choices?.[0]?.message?.content || 'Meow... I didn’t quite get that.';
       await interaction.editReply(reply);
     } catch (err) {
-      console.error('[AI] Error while calling OpenRouter:', err);
-      await interaction.editReply('Nyaa~ Something went wrong, sorry!');
+      console.error('[AI] OpenRouter error:', err);
+      await interaction.editReply('Nyaa~ Something went wrong!');
     }
   }
 
+  // /custom-acc command
   if (interaction.commandName === 'custom-acc') {
+    console.log(`[ADMIN] ${interaction.user.tag} (${interaction.user.id}) tried to create account`);
     if (interaction.user.id !== ADMIN_DISCORD_ID) {
       return interaction.reply({ content: 'Only my master can use this command, nya~', ephemeral: true });
     }
 
     const username = interaction.options.getString('username');
     const password = interaction.options.getString('password');
-
     const existing = db.prepare('SELECT * FROM admins WHERE username = ?').get(username);
+
     if (existing) {
       return interaction.reply({ content: 'That username already exists, nya!', ephemeral: true });
     }
 
     db.prepare('INSERT INTO admins (username, password) VALUES (?, ?)').run(username, password);
-    console.log(`[ADMIN] New admin account created: ${username}`);
+    console.log(`[ADMIN] Created account: ${username}`);
+
     await interaction.reply({ content: 'Admin account created, meow~', ephemeral: true });
 
     try {
       const user = await bot.users.fetch(ADMIN_DISCORD_ID);
       await user.send(`New admin created:\nUsername: ${username}\nPassword: ${password}`);
     } catch (err) {
-      console.error('[DM] Failed to send DM to admin:', err);
+      console.error('[DM] Failed to send DM:', err);
     }
-  }
-
-  if (interaction.commandName === 'admin-list') {
-    if (interaction.user.id !== ADMIN_DISCORD_ID) {
-      return interaction.reply({ content: 'Access denied, nya~', ephemeral: true });
-    }
-
-    const rows = db.prepare('SELECT username FROM admins').all();
-    const list = rows.map(r => r.username).join('\n') || 'No admins yet.';
-    await interaction.reply({ content: `Current admins:\n\`\`\`\n${list}\n\`\`\``, ephemeral: true });
   }
 });
 
