@@ -81,6 +81,17 @@ const commands = [
     .addStringOption(option =>
       option.setName('question')
         .setDescription('Your question')
+        .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('custom-acc')
+    .setDescription('Create a custom admin account')
+    .addStringOption(option =>
+      option.setName('username')
+        .setDescription('New admin username')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('password')
+        .setDescription('New admin password')
         .setRequired(true))
 ];
 
@@ -129,29 +140,32 @@ bot.on(Events.InteractionCreate, async interaction => {
       await interaction.editReply('Nyaa~ Something went wrong, sorry!');
     }
   }
-});
 
-// DM-based admin account creation
-bot.on('messageCreate', msg => {
-  if (!msg.guild && msg.author.id === ADMIN_DISCORD_ID) {
-    console.log('[DM] Message from admin:', msg.content);
-    const match = msg.content.match(/^!u\s*\(([^)]+)\)\s*p\s*\(([^)]+)\)/);
-    if (match) {
-      const username = match[1].trim();
-      const password = match[2].trim();
-      const admins = JSON.parse(fs.readFileSync('admins.json', 'utf-8'));
+  if (interaction.commandName === 'custom-acc') {
+    if (interaction.user.id !== ADMIN_DISCORD_ID) {
+      return interaction.reply({ content: 'Only my master can use this command, nya~', ephemeral: true });
+    }
 
-      if (admins.find(u => u.username === username)) {
-        msg.reply('That username already exists.');
-        return;
-      }
+    const username = interaction.options.getString('username');
+    const password = interaction.options.getString('password');
+    const admins = JSON.parse(fs.readFileSync('admins.json', 'utf-8'));
 
-      admins.push({ username, password });
-      fs.writeFileSync('admins.json', JSON.stringify(admins, null, 2));
-      console.log(`[ADMIN] New admin account created: ${username}`);
-      msg.reply('Created!');
-    } else {
-      console.log('[DM] Invalid format.');
+    if (admins.find(u => u.username === username)) {
+      return interaction.reply({ content: 'That username already exists, nya!', ephemeral: true });
+    }
+
+    admins.push({ username, password });
+    fs.writeFileSync('admins.json', JSON.stringify(admins, null, 2));
+    console.log(`[ADMIN] New admin account created: ${username}`);
+    await interaction.reply({ content: 'Admin account created, meow~', ephemeral: true });
+
+    try {
+      const user = await bot.users.fetch(ADMIN_DISCORD_ID);
+      await user.send(`New admin created:
+Username: ${username}
+Password: ${password}`);
+    } catch (err) {
+      console.error('[DM] Failed to send DM to admin:', err);
     }
   }
 });
