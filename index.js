@@ -3,124 +3,178 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const bodyParser = require('body-parser');
-const betterSqlite3 = require('better-sqlite3');
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, Events } = require('discord.js');
+const Database = require('better-sqlite3');
+require('dotenv').config();
 
-// === CONFIG ===
 const app = express();
-const db = betterSqlite3('admin.db');
 const PORT = process.env.PORT || 3000;
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = process.env.BOT_GUILD_ID;
-const MASTER_DISCORD_ID = '722100931164110939';
 
-// === DB INIT ===
+// Database setup
+const db = new Database('admins.db');
 db.prepare(`CREATE TABLE IF NOT EXISTS admins (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE,
   password TEXT
 )`).run();
 
-// === MIDDLEWARE ===
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
-app.use(session({ secret: process.env.SESSION_SECRET || 'secret', resave: false, saveUninitialized: true }));
+// Session middleware
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: true
+}));
 
-// === STATIC FILE ===
+app.use(bodyParser.json());
+
+// Serve index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// === LOGIN (POST) ===
-app.post('/login', (req, res) => {
-  console.log('[POST /login] Body:', req.body);
-  const { username, password } = req.body;
+// Track login attempts
+const loginRequests = [];
 
-  if (!username || !password) {
-    console.log('Missing username or password');
+app.get('/status', (req, res) => {
+  res.json({ online: botReady });
+});
+
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  const found = db.prepare('SELECT * FROM admins WHERE username = ? AND password = ?').get(username, password);
+
+  const now = new Date();
+  const timestamp = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  loginRequests.push(`${timestamp} ${username}`);
+  console.log(`[LOGIN] Attempt at ${timestamp} with username: ${username}`);
+
+  if (found) {
+    req.session.user = username;
+    return res.json({ success: true });
+  } else {
     return res.json({ success: false });
   }
-
-  const user = db.prepare('SELECT * FROM admins WHERE username = ? AND password = ?').get(username, password);
-  if (user) {
-    req.session.authenticated = true;
-    req.session.username = username;
-    console.log(`Login successful for user: ${username}`);
-    res.json({ success: true });
-  } else {
-    console.log(`Login failed for user: ${username}`);
-    res.json({ success: false });
-  }
 });
 
-// === LOGIN (GET) ===
-app.get('/login', (req, res) => {
-  console.log('[GET /login] User redirected to login');
-  res.sendFile(path.join(__dirname, 'index.html'));
+app.get('/login-requests', (req, res) => {
+  res.json(loginRequests);
 });
 
-// === DASHBOARD ===
-app.get('/dashboard', (req, res) => {
-  if (!req.session.authenticated) return res.redirect('/login');
-  res.send(`<h1>Welcome, ${req.session.username}</h1>`);
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
-// === DISCORD BOT ===
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
+// Discord Bot
+const bot = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages, GatewayIntentBits.GuildMessages],
   partials: [Partials.Channel]
 });
 
-client.once('ready', async () => {
-  console.log(`Logged in as ${client.user.tag}`);
+let botReady = false;
+const ADMIN_DISCORD_ID = process.env.ADMIN_DISCORD_ID;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-  const commands = [
-    new SlashCommandBuilder()
-      .setName('custom-acc')
-      .setDescription('Create a custom admin account')
-      .addStringOption(opt => opt.setName('username').setDescription('The username').setRequired(true))
-      .addStringOption(opt => opt.setName('password').setDescription('The password').setRequired(true))
-      .toJSON()
-  ];
-
-  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-  try {
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
-    console.log('Slash commands registered');
-  } catch (err) {
-    console.error('Failed to register commands:', err);
-  }
+bot.once('ready', () => {
+  botReady = true;
+  console.log(`Bot logged in as ${bot.user.tag}`);
 });
 
-client.on('interactionCreate', async (interaction) => {
+const commands = [
+  new SlashCommandBuilder()
+    .setName('ask')
+    .setDescription('Ask the KittyAI something!')
+    .addStringOption(option =>
+      option.setName('question')
+        .setDescription('Your question')
+        .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('custom-acc')
+    .setDescription('Create a custom admin account')
+    .addStringOption(option =>
+      option.setName('username')
+        .setDescription('New admin username')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('password')
+        .setDescription('New admin password')
+        .setRequired(true))
+];
+
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+(async () => {
+  try {
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
+    console.log('Slash commands registered.');
+  } catch (err) {
+    console.error('Error registering slash commands:', err);
+  }
+})();
+
+bot.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === 'ask') {
+    const question = interaction.options.getString('question');
+    console.log(`[SLASH] /ask received: ${question}`);
+    await interaction.deferReply();
+
+    const requestBody = {
+      model: 'llama3-70b-8192',
+      messages: [
+        { role: 'system', content: 'You are KittyAI, a playful and purr-fectly helpful cat assistant!' },
+        { role: 'user', content: question }
+      ]
+    };
+
+    try {
+      console.log('[GROQ] Sending request:', JSON.stringify(requestBody, null, 2));
+
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      const data = await response.json();
+      console.log('[GROQ] Response:', JSON.stringify(data, null, 2));
+
+      const reply = data.choices?.[0]?.message?.content || 'Meow... I didn’t quite get that.';
+      await interaction.editReply(reply);
+
+    } catch (err) {
+      console.error('[GROQ] Error:', err);
+      await interaction.editReply('Nyaa~ Something went wrong, sorry!');
+    }
+  }
+
   if (interaction.commandName === 'custom-acc') {
-    console.log(`[Slash] /custom-acc invoked by ${interaction.user.id}`);
-    if (interaction.user.id !== MASTER_DISCORD_ID) {
-      await interaction.reply({ content: 'Only my master can use this command, nya~', ephemeral: true });
-      return;
+    if (interaction.user.id !== ADMIN_DISCORD_ID) {
+      return interaction.reply({ content: 'Only my master can use this command, nya~', ephemeral: true });
     }
 
     const username = interaction.options.getString('username');
     const password = interaction.options.getString('password');
+
+    const exists = db.prepare('SELECT * FROM admins WHERE username = ?').get(username);
+    if (exists) {
+      return interaction.reply({ content: 'That username already exists, nya!', ephemeral: true });
+    }
+
+    db.prepare('INSERT INTO admins (username, password) VALUES (?, ?)').run(username, password);
+    console.log(`[ADMIN] New admin account created: ${username}`);
+    await interaction.reply({ content: 'Admin account created, meow~', ephemeral: true });
+
     try {
-      db.prepare('INSERT INTO admins (username, password) VALUES (?, ?)').run(username, password);
-      await interaction.reply({ content: `Account created for \`${username}\``, ephemeral: true });
-      await interaction.user.send(`New admin account created:
-Username: \`${username}\`
-Password: \`${password}\``);
-      console.log(`Admin account created for ${username}`);
+      const user = await bot.users.fetch(ADMIN_DISCORD_ID);
+      await user.send(`New admin created:\nUsername: ${username}\nPassword: ${password}`);
     } catch (err) {
-      console.error('DB error:', err);
-      await interaction.reply({ content: 'That username already exists or there was a DB error.', ephemeral: true });
+      console.error('[DM] Failed to send DM to admin:', err);
     }
   }
 });
 
-client.login(DISCORD_TOKEN);
-
-// === START SERVER ===
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+bot.login(process.env.DISCORD_TOKEN).catch(err => {
+  console.error('[BOT] Login failed:', err);
 });
