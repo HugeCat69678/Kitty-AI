@@ -1,11 +1,14 @@
 {
-  "name": "kittyai-bot",
+  "name": "kittyai-discord-bot",
   "version": "1.0.0",
-  "description": "Kitty AI Discord bot and admin dashboard",
+  "description": "Discord AI bot with image understanding and admin panel",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "better-sqlite3": "^8.4.0",
@@ -14,12 +17,6 @@
     "dotenv": "^16.3.1",
     "express": "^4.19.2",
     "express-session": "^1.17.3",
-    "node-fetch": "^2.6.7"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "keywords": [],
-  "author": "orb.me",
-  "license": "MIT"
+    "node-fetch": "^2.6.9"
+  }
 }
