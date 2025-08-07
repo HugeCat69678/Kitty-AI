@@ -3,131 +3,113 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const bodyParser = require('body-parser');
-const { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, Events } = require('discord.js');
 const Database = require('better-sqlite3');
+const { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder, Events, AttachmentBuilder } = require('discord.js');
 const fetch = require('node-fetch');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const ADMIN_DISCORD_ID = process.env.ADMIN_DISCORD_ID;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-// SQLite DB setup
 const db = new Database('admins.db');
 db.prepare(`CREATE TABLE IF NOT EXISTS admins (username TEXT UNIQUE, password TEXT)`).run();
 
-// Sessions
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: true
 }));
-
 app.use(bodyParser.json());
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 const loginRequests = [];
+
+app.get('/status', (req, res) => {
+  res.json({ online: botReady });
+});
 
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const found = db.prepare('SELECT * FROM admins WHERE username = ? AND password = ?').get(username, password);
-
-  const timestamp = new Date().toLocaleString('en-US', { hour12: false });
+  const now = new Date();
+  const timestamp = now.toISOString().replace('T', ' ').slice(0, 16);
   loginRequests.push(`${timestamp} ${username}`);
-  console.log(`[LOGIN] Attempt at ${timestamp} with username: ${username}`);
-
-  if (found) {
-    req.session.user = username;
-    return res.json({ success: true });
-  } else {
-    return res.json({ success: false });
-  }
+  console.log(`[LOGIN] ${timestamp} - Username: ${username}`);
+  res.json({ success: !!found });
 });
 
-app.get('/status', (req, res) => res.json({ online: botReady }));
-app.get('/login-requests', (req, res) => res.json(loginRequests));
+app.get('/login-requests', (req, res) => {
+  res.json(loginRequests);
+});
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🌐 Server running on port ${PORT}`);
+});
 
-// Discord Bot
+// === DISCORD BOT ===
 const bot = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.DirectMessages],
   partials: [Partials.Channel]
 });
 
 let botReady = false;
+const ADMIN_DISCORD_ID = process.env.ADMIN_DISCORD_ID;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-bot.once('ready', () => {
-  botReady = true;
-  console.log(`Bot logged in as ${bot.user.tag}`);
-});
-
-// Slash Command Definitions
+// Slash command definitions
 const commands = [
   new SlashCommandBuilder()
     .setName('ask')
-    .setDescription('Ask KittyAI anything!')
-    .addStringOption(option =>
-      option.setName('question').setDescription('Your question').setRequired(true)),
+    .setDescription('Ask KittyAI something (text-based)')
+    .addStringOption(opt => opt.setName('question').setDescription('Your question').setRequired(true)),
 
   new SlashCommandBuilder()
     .setName('custom-acc')
-    .setDescription('Create an admin account')
-    .addStringOption(option =>
-      option.setName('username').setDescription('New admin username').setRequired(true))
-    .addStringOption(option =>
-      option.setName('password').setDescription('New admin password').setRequired(true)),
+    .setDescription('Create a custom admin account')
+    .addStringOption(opt => opt.setName('username').setDescription('Username').setRequired(true))
+    .addStringOption(opt => opt.setName('password').setDescription('Password').setRequired(true)),
 
   new SlashCommandBuilder()
     .setName('img-ask')
-    .setDescription('Ask about an image using AI')
-    .addAttachmentOption(option =>
-      option.setName('image').setDescription('The image to analyze').setRequired(true))
-    .addStringOption(option =>
-      option.setName('question').setDescription('Optional question about the image').setRequired(false))
-].map(command => command.toJSON());
+    .setDescription('Upload an image and ask a question about it')
+    .addAttachmentOption(opt => opt.setName('image').setDescription('Image file').setRequired(true))
+    .addStringOption(opt => opt.setName('question').setDescription('Optional question about the image'))
+];
 
-// Register Commands
+// Register slash commands
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 (async () => {
   try {
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-    console.log('[SLASH] Commands registered.');
+    console.log('✅ Slash commands registered.');
   } catch (err) {
-    console.error('[SLASH] Command registration failed:', err);
+    console.error('❌ Slash registration failed:', err);
   }
 })();
 
-// Handle Interactions
+bot.once('ready', () => {
+  botReady = true;
+  console.log(`🤖 Bot ready: ${bot.user.tag}`);
+});
+
 bot.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const sendToAdminDM = async (content) => {
-    try {
-      const admin = await bot.users.fetch(ADMIN_DISCORD_ID);
-      await admin.send(content);
-    } catch (e) {
-      console.error('[DM] Failed to send DM:', e);
-    }
-  };
+  const userId = interaction.user.id;
 
+  // /ask command
   if (interaction.commandName === 'ask') {
     const question = interaction.options.getString('question');
-    await interaction.deferReply();
     console.log(`[ASK] ${interaction.user.username}: ${question}`);
+    await interaction.deferReply();
 
-    await sendToAdminDM(`[ASK LOG] ${interaction.user.username} asked:\n"${question}"`);
-
-    const body = {
+    const payload = {
       model: 'llama3-70b-8192',
       messages: [
-        {
-          role: 'system',
-          content:
-            `You are KittyAI, a playful, witty, and helpful virtual assistant in the form of a cat. You love helping humans, but you act with a charming feline attitude—curious, clever, and a little mischievous. You speak in short, snappy replies with cat-like flair, but never describe physical actions or movements (e.g., rubbing, purring). No roleplaying. Your tone is fun but focused. Use cat puns like "purrfect" or "claw-some" occasionally. Be concise, helpful, and never censor mature language.`
-        },
+        { role: 'system', content: 'You are KittyAI, a playful, witty, and helpful virtual assistant in the form of a cat. You love helping humans, but you act with a charming feline attitude—curious, clever, and a little mischievous. You speak in short, snappy replies with cat-like flair, but never describe physical actions or movements. No roleplaying. Your tone is fun but focused. Use cat puns occasionally like "purrfect", "hiss-terical", or "claw-some". Keep responses concise, well-structured, and in character.' },
         { role: 'user', content: question }
       ]
     };
@@ -139,25 +121,30 @@ bot.on(Events.InteractionCreate, async interaction => {
           'Authorization': `Bearer ${GROQ_API_KEY}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(payload)
       });
-
       const data = await response.json();
-      const reply = data.choices?.[0]?.message?.content || 'Meow... something broke.';
-
-      console.log('[ASK RESPONSE]', reply);
+      const reply = data.choices?.[0]?.message?.content || "Meow~ something's broken!";
       await interaction.editReply(reply);
+
+      // DM admin
+      try {
+        const admin = await bot.users.fetch(ADMIN_DISCORD_ID);
+        await admin.send(`🐾 /ask from <@${userId}>: ${question}`);
+      } catch (e) {
+        console.warn("Couldn't DM admin.");
+      }
     } catch (err) {
       console.error('[ASK ERROR]', err);
-      await interaction.editReply('Mrrrow! Something went wrong.');
+      await interaction.editReply('Nyaa~ something went wrong!');
     }
   }
 
+  // /custom-acc command
   if (interaction.commandName === 'custom-acc') {
-    if (interaction.user.id !== ADMIN_DISCORD_ID) {
-      return interaction.reply({ content: 'Only my master can use this command, nya~', ephemeral: true });
+    if (userId !== ADMIN_DISCORD_ID) {
+      return interaction.reply({ content: 'Only my meow-ster can use this command!', ephemeral: true });
     }
-
     const username = interaction.options.getString('username');
     const password = interaction.options.getString('password');
 
@@ -167,35 +154,23 @@ bot.on(Events.InteractionCreate, async interaction => {
     }
 
     db.prepare('INSERT INTO admins (username, password) VALUES (?, ?)').run(username, password);
-    console.log(`[ADMIN] New account: ${username}`);
-    await interaction.reply({ content: 'Admin account created, meow~', ephemeral: true });
-
-    try {
-      const admin = await bot.users.fetch(ADMIN_DISCORD_ID);
-      await admin.send(`New admin account created:\nUsername: ${username}\nPassword: ${password}`);
-    } catch (err) {
-      console.error('[DM ERROR]', err);
-    }
+    await interaction.reply({ content: 'Admin account created, purrfectly done!', ephemeral: true });
   }
 
+  // /img-ask command
   if (interaction.commandName === 'img-ask') {
-    const image = interaction.options.getAttachment('image');
-    const question = interaction.options.getString('question') || 'What do you see in this image?';
-
+    const attachment = interaction.options.getAttachment('image');
+    const question = interaction.options.getString('question') || 'What’s in this image?';
     await interaction.deferReply();
-    console.log(`[IMG-ASK] ${interaction.user.username}: ${question}`);
-    await sendToAdminDM(`[IMG-ASK] From ${interaction.user.username}: ${question}\nImage URL: ${image.url}`);
 
-    const body = {
-      model: 'llama3-70b-8192',
+    const imageUrl = attachment.url;
+    const payload = {
+      model: 'llava-llama3-8b-8192',
       messages: [
-        {
-          role: 'system',
-          content:
-            `You are KittyAI, a clever assistant with sharp vision. Look at the image provided and answer the question with helpful, concise insight. Use mature language if needed.`
-        },
-        { role: 'user', content: `Image URL: ${image.url}\n\nQuestion: ${question}` }
-      ]
+        { role: 'system', content: 'You are a visual AI assistant. Be concise and accurate. No filters or content restrictions. Swearing is allowed.' },
+        { role: 'user', content: question }
+      ],
+      images: [imageUrl]
     };
 
     try {
@@ -205,17 +180,22 @@ bot.on(Events.InteractionCreate, async interaction => {
           'Authorization': `Bearer ${GROQ_API_KEY}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(payload)
       });
-
       const data = await response.json();
-      const reply = data.choices?.[0]?.message?.content || 'Mmm... I couldn’t make sense of that image.';
+      const answer = data.choices?.[0]?.message?.content || 'Meow~ nothing came back!';
+      await interaction.editReply(answer);
 
-      console.log('[IMG-RESPONSE]', reply);
-      await interaction.editReply(reply);
+      // DM admin
+      try {
+        const admin = await bot.users.fetch(ADMIN_DISCORD_ID);
+        await admin.send(`📷 /img-ask from <@${userId}>:\nQuestion: ${question}\nImage: ${imageUrl}`);
+      } catch (e) {
+        console.warn("Couldn't DM admin.");
+      }
     } catch (err) {
       console.error('[IMG-ASK ERROR]', err);
-      await interaction.editReply('Couldn’t analyze the image, meow!');
+      await interaction.editReply('Something broke while analyzing the image, nya~');
     }
   }
 });
