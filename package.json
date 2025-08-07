@@ -1,21 +1,25 @@
 {
-  "name": "kittyai-dashboard",
+  "name": "kittyai-bot",
   "version": "1.0.0",
-  "description": "KittyAI Admin Dashboard + Discord Bot",
+  "description": "Kitty AI Discord bot and admin dashboard",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  },
   "dependencies": {
     "better-sqlite3": "^8.4.0",
     "body-parser": "^1.20.2",
-    "discord.js": "^14.13.0",
-    "dotenv": "^16.4.5",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
     "express": "^4.19.2",
-    "express-session": "^1.17.3"
-  }
+    "express-session": "^1.17.3",
+    "node-fetch": "^2.6.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [],
+  "author": "orb.me",
+  "license": "MIT"
 }
