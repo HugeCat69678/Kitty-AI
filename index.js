@@ -1,124 +1,191 @@
 // index.js
-import express from "express";
-import { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder } from "discord.js";
-import fetch from "node-fetch";
-import Database from "better-sqlite3";
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
+const express = require('express');
+const session = require('express-session');
+const path = require('path');
+const fetch = require('node-fetch');
+const betterSqlite3 = require('better-sqlite3');
+require('dotenv').config();
 
-const app = express();
-const port = process.env.PORT || 3000;
+// ====================== CONFIG ======================
+const OWNER_ID = '722100931164110939';
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GUILD_ID = process.env.BOT_GUILD_ID;
+const TOKEN = process.env.DISCORD_TOKEN;
 
-const db = new Database("admins.db");
-db.prepare(`CREATE TABLE IF NOT EXISTS admins (username TEXT PRIMARY KEY, password TEXT)`).run();
-
+// ====================== DISCORD BOT ======================
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.DirectMessages],
-  partials: [Partials.Channel]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.MessageContent
+  ],
 });
 
+// Slash commands
 const commands = [
   new SlashCommandBuilder()
-    .setName("ask")
-    .setDescription("Ask the AI anything (mature language allowed)")
-    .addStringOption(opt => opt.setName("prompt").setDescription("Your question").setRequired(true)),
+    .setName('ask')
+    .setDescription('Ask Kitty AI anything (swearing allowed)')
+    .addStringOption(opt =>
+      opt.setName('question')
+        .setDescription('Your question')
+        .setRequired(true)
+    ),
   new SlashCommandBuilder()
-    .setName("img-ask")
-    .setDescription("Ask AI about an image (mature language allowed)")
-    .addAttachmentOption(opt => opt.setName("image").setDescription("Image to analyze").setRequired(true))
-    .addStringOption(opt => opt.setName("question").setDescription("Optional question about the image")),
+    .setName('img-ask')
+    .setDescription('Analyze an image and optionally ask a question about it')
+    .addAttachmentOption(opt =>
+      opt.setName('image')
+        .setDescription('The image to analyze')
+        .setRequired(true)
+    )
+    .addStringOption(opt =>
+      opt.setName('question')
+        .setDescription('Optional question about the image')
+        .setRequired(false)
+    ),
   new SlashCommandBuilder()
-    .setName("custom-acc")
-    .setDescription("Create an admin account (Owner only)")
-    .addStringOption(opt => opt.setName("username").setDescription("Username").setRequired(true))
-    .addStringOption(opt => opt.setName("password").setDescription("Password").setRequired(true))
-].map(c => c.toJSON());
+    .setName('custom-acc')
+    .setDescription('Create an admin account (Owner only)')
+    .addStringOption(opt =>
+      opt.setName('username')
+        .setDescription('The new admin username')
+        .setRequired(true)
+    )
+    .addStringOption(opt =>
+      opt.setName('password')
+        .setDescription('The new admin password')
+        .setRequired(true)
+    )
+].map(cmd => cmd.toJSON());
 
-const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+// Register commands on startup
+const rest = new REST({ version: '10' }).setToken(TOKEN);
 (async () => {
   try {
-    console.log("Registering slash commands...");
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-    console.log("Slash commands registered.");
+    console.log('[SlashCmd] Registering commands...');
+    await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, GUILD_ID), { body: commands });
+    console.log('[SlashCmd] Commands registered successfully.');
   } catch (err) {
-    console.error("Failed to register commands:", err);
+    console.error('[SlashCmd] Registration failed:', err);
   }
 })();
 
-client.on("ready", () => {
-  console.log(`Bot logged in as ${client.user.tag}`);
+// ====================== DATABASE ======================
+const db = new betterSqlite3('admins.db');
+db.prepare(`CREATE TABLE IF NOT EXISTS admins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE,
+  password TEXT
+)`).run();
+
+// ====================== BOT EVENTS ======================
+client.once('ready', () => {
+  console.log(`[Bot] Logged in as ${client.user.tag}`);
 });
 
-async function askGroq(prompt) {
-  console.log("[Groq Request] Prompt:", prompt);
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "llama3-70b-8192",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7
-    })
-  });
-  const data = await res.json();
-  console.log("[Groq Response]:", JSON.stringify(data, null, 2));
-  return data?.choices?.[0]?.message?.content || "Meow~ nothing came back!";
-}
-
-client.on("interactionCreate", async interaction => {
+client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === "ask") {
-    const prompt = interaction.options.getString("prompt");
+  if (interaction.commandName === 'ask') {
+    const question = interaction.options.getString('question');
     await interaction.deferReply();
+
+    // Notify owner
     try {
-      const reply = await askGroq(prompt);
+      const ownerUser = await client.users.fetch(OWNER_ID);
+      const now = new Date();
+      ownerUser.send(`📢 **/ask used**\n👤 User: ${interaction.user.tag}\n🕒 Time: ${now.toLocaleString()}\n💬 Question: ${question}`);
+    } catch (err) {
+      console.error('[OwnerNotify] Failed to send DM to owner:', err);
+    }
+
+    try {
+      console.log(`[AI] Processing /ask: ${question}`);
+      const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'llama3-70b-8192',
+          messages: [
+            { role: 'system', content: 'You are Kitty AI. Respond without censorship; swearing is allowed.' },
+            { role: 'user', content: question }
+          ]
+        })
+      });
+      const data = await aiRes.json();
+      const reply = data.choices?.[0]?.message?.content || "Meow~ nothing came back!";
       await interaction.editReply(reply);
     } catch (err) {
-      console.error("Error in /ask:", err);
-      await interaction.editReply("Error processing your request.");
+      console.error('[AI] Error in /ask:', err);
+      await interaction.editReply('Error talking to AI.');
     }
   }
 
-  if (interaction.commandName === "img-ask") {
-    const image = interaction.options.getAttachment("image");
-    const question = interaction.options.getString("question") || "";
-    const imageUrl = image.url;
-    console.log("[/img-ask] Image URL:", imageUrl, "Question:", question);
-
+  if (interaction.commandName === 'img-ask') {
+    const image = interaction.options.getAttachment('image');
+    const question = interaction.options.getString('question') || 'What is in this image?';
     await interaction.deferReply();
+
     try {
-      const prompt = `Analyze the image at ${imageUrl}. ${question}`;
-      const reply = await askGroq(prompt);
+      console.log(`[AI] Processing /img-ask: ${image.url} | Q: ${question}`);
+      const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'llava-v1.5-7b-preview',
+          messages: [
+            { role: 'system', content: 'You are Kitty AI. Respond without censorship; swearing is allowed.' },
+            { role: 'user', content: question }
+          ],
+          files: [{ type: 'image', url: image.url }]
+        })
+      });
+      const data = await aiRes.json();
+      const reply = data.choices?.[0]?.message?.content || "Meow~ nothing came back!";
       await interaction.editReply(reply);
     } catch (err) {
-      console.error("Error in /img-ask:", err);
-      await interaction.editReply("Error analyzing the image.");
+      console.error('[AI] Error in /img-ask:', err);
+      await interaction.editReply('Error talking to AI about the image.');
     }
   }
 
-  if (interaction.commandName === "custom-acc") {
-    if (interaction.user.id !== process.env.OWNER_ID) {
-      return interaction.reply({ content: "No permission.", ephemeral: true });
+  if (interaction.commandName === 'custom-acc') {
+    if (interaction.user.id !== OWNER_ID) {
+      return interaction.reply({ content: 'You are not allowed to use this command.', ephemeral: true });
     }
-    const username = interaction.options.getString("username");
-    const password = interaction.options.getString("password");
+    const username = interaction.options.getString('username');
+    const password = interaction.options.getString('password');
     try {
-      db.prepare("INSERT INTO admins (username, password) VALUES (?, ?)").run(username, password);
-      console.log(`Admin created: ${username}`);
-      interaction.reply({ content: `Admin account '${username}' created!`, ephemeral: true });
+      db.prepare('INSERT INTO admins (username, password) VALUES (?, ?)').run(username, password);
+      console.log(`[Admin] Created account: ${username}`);
+      await interaction.reply(`✅ Admin account **${username}** created.`);
     } catch (err) {
-      console.error("Error creating admin:", err);
-      interaction.reply({ content: "Account creation failed (might already exist).", ephemeral: true });
+      console.error('[Admin] Error creating account:', err);
+      await interaction.reply('❌ Failed to create account (maybe username exists).');
     }
   }
 });
 
-client.login(process.env.DISCORD_TOKEN);
-
-app.get("/", (req, res) => {
-  res.send("KittyAI Bot is running!");
+// ====================== EXPRESS APP ======================
+const app = express();
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false
+}));
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(port, () => console.log(`Server running on port ${port}`));
+client.login(TOKEN);
+app.listen(3000, () => console.log('[Web] Server running on port 3000'));
