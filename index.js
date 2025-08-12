@@ -1,210 +1,236 @@
-// index.js
+// =======================
+// Imports & Setup
+// =======================
 const express = require("express");
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
 const session = require("express-session");
-const fetch = require("node-fetch");
+const path = require("path");
+const { Client, GatewayIntentBits, Partials, REST, Routes, SlashCommandBuilder } = require("discord.js");
 const Database = require("better-sqlite3");
-require("dotenv").config();
+const fetch = require("node-fetch");
 
-// --- CONFIG ---
-const MASTER_ID = "722100931164110939"; // Your Discord ID
+const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- DATABASE ---
-const db = new Database("admins.db");
-db.prepare(`CREATE TABLE IF NOT EXISTS admins (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    password TEXT
-)`).run();
-
-// --- DISCORD CLIENT ---
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.DirectMessages,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
-    ],
-});
-
-// --- EXPRESS APP ---
-const app = express();
+// =======================
+// Session & Middleware
+// =======================
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(session({
-    secret: process.env.SESSION_SECRET || "secret",
+    secret: process.env.SESSION_SECRET || "supersecret",
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: false
 }));
 
-// --- WEB ROUTE ---
-app.get("/", (req, res) => {
-    res.send("KittyAI Bot is running!");
+// =======================
+// Database
+// =======================
+const db = new Database("admins.db");
+db.prepare(`
+CREATE TABLE IF NOT EXISTS admins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT
+)
+`).run();
+
+// =======================
+// Discord Bot Setup
+// =======================
+const bot = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.MessageContent
+    ],
+    partials: [Partials.Channel]
 });
 
-// --- STARTUP COMMAND REGISTRATION ---
-client.once("ready", async () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
+const MASTER_ID = "722100931164110939";
+let botOnlineSince = null;
 
+// =======================
+// Slash Commands
+// =======================
+const commands = [
+    new SlashCommandBuilder()
+        .setName("ask")
+        .setDescription("Ask AI (18+, swearing allowed)")
+        .addStringOption(option =>
+            option.setName("question").setDescription("Your question").setRequired(true)
+        ),
+
+    new SlashCommandBuilder()
+        .setName("img-ask")
+        .setDescription("Ask AI about an image (18+, swearing allowed)")
+        .addAttachmentOption(option =>
+            option.setName("image").setDescription("Image to analyze").setRequired(true)
+        )
+        .addStringOption(option =>
+            option.setName("question").setDescription("Optional question about the image").setRequired(false)
+        ),
+
+    new SlashCommandBuilder()
+        .setName("custom-acc")
+        .setDescription("Create an admin account")
+        .addStringOption(option =>
+            option.setName("username").setDescription("Account username").setRequired(true)
+        )
+        .addStringOption(option =>
+            option.setName("password").setDescription("Account password").setRequired(true)
+        )
+].map(cmd => cmd.toJSON());
+
+// =======================
+// Slash Command Register
+// =======================
+(async () => {
     const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
-
     try {
-        console.log("🗑 Clearing old global commands...");
-        await rest.put(
-            Routes.applicationCommands(process.env.CLIENT_ID),
-            { body: [] }
-        );
-        console.log("✅ Old commands cleared.");
-
-        const commands = [
-            new SlashCommandBuilder()
-                .setName("ask")
-                .setDescription("Ask the AI anything (mature language allowed).")
-                .addStringOption(opt =>
-                    opt.setName("question")
-                        .setDescription("Your question")
-                        .setRequired(true)
-                ),
-            new SlashCommandBuilder()
-                .setName("img-ask")
-                .setDescription("Ask the AI about an image.")
-                .addAttachmentOption(opt =>
-                    opt.setName("image")
-                        .setDescription("The image file")
-                        .setRequired(true)
-                )
-                .addStringOption(opt =>
-                    opt.setName("question")
-                        .setDescription("Optional question about the image")
-                        .setRequired(false)
-                ),
-            new SlashCommandBuilder()
-                .setName("custom-acc")
-                .setDescription("Create an admin account (Master only).")
-                .addStringOption(opt =>
-                    opt.setName("username")
-                        .setDescription("Account username")
-                        .setRequired(true)
-                )
-                .addStringOption(opt =>
-                    opt.setName("password")
-                        .setDescription("Account password")
-                        .setRequired(true)
-                )
-        ].map(cmd => cmd.toJSON());
-
-        console.log("📌 Registering new global commands...");
+        console.log("Registering slash commands...");
         await rest.put(
             Routes.applicationCommands(process.env.CLIENT_ID),
             { body: commands }
         );
-        console.log("✅ Commands registered: /ask, /img-ask, /custom-acc");
-
+        console.log("✅ Slash commands registered globally.");
     } catch (err) {
-        console.error("❌ Command registration failed:", err);
+        console.error("❌ Error registering commands:", err);
     }
+})();
+
+// =======================
+// Discord Events
+// =======================
+bot.once("ready", () => {
+    botOnlineSince = Date.now();
+    console.log(`✅ Logged in as ${bot.user.tag}`);
 });
 
-// --- AI HELPERS ---
-async function callGroq(prompt, imageUrl = null) {
-    console.log("🤖 Sending request to Groq API...");
-    const payload = {
-        model: imageUrl ? "llava-v1.5-7b" : "llama3-70b-8192",
-        messages: imageUrl
-            ? [
-                { role: "system", content: "You can use mature language. Describe or answer about the image." },
-                {
-                    role: "user",
-                    content: [
-                        { type: "input_text", text: prompt || "What's in this image?" },
-                        { type: "input_image", image_url: imageUrl }
-                    ]
-                }
-            ]
-            : [
-                { role: "system", content: "You can use mature language. Answer directly." },
-                { role: "user", content: prompt }
-            ]
-    };
-
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-            "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-    });
-
-    const data = await res.json();
-    console.log("📩 Groq API response:", data);
-    if (data?.choices?.[0]?.message?.content) {
-        return data.choices[0].message.content;
-    } else {
-        return "Meow~ nothing came back!";
-    }
-}
-
-// --- COMMAND HANDLER ---
-client.on("interactionCreate", async interaction => {
+bot.on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
-    if (interaction.commandName === "ask") {
+    const cmd = interaction.commandName;
+
+    if (cmd === "ask") {
         const question = interaction.options.getString("question");
-        console.log(`💬 /ask from ${interaction.user.tag}: ${question}`);
+        await interaction.deferReply();
 
         try {
-            const aiResponse = await callGroq(question);
-            await interaction.reply(aiResponse);
+            // Notify master
+            const master = await bot.users.fetch(MASTER_ID);
+            master.send(`💬 /ask used by **${interaction.user.username}** at ${new Date().toLocaleString()}\nQuestion: ${question}`);
 
-            const masterUser = await client.users.fetch(MASTER_ID);
-            await masterUser.send(`📢 /ask used by **${interaction.user.tag}** at ${new Date().toLocaleString()}:\n> ${question}`);
+            // AI request (Groq API)
+            const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    model: "llama3-70b-8192",
+                    messages: [
+                        { role: "system", content: "You are a helpful AI that allows swearing and mature content." },
+                        { role: "user", content: question }
+                    ]
+                })
+            });
+
+            const data = await aiRes.json();
+            const answer = data.choices?.[0]?.message?.content || "❌ No response";
+            await interaction.editReply(answer);
 
         } catch (err) {
             console.error(err);
-            await interaction.reply("❌ Error getting AI response.");
+            await interaction.editReply("❌ Error processing request.");
         }
     }
 
-    if (interaction.commandName === "img-ask") {
+    if (cmd === "img-ask") {
         const image = interaction.options.getAttachment("image");
-        const question = interaction.options.getString("question") || null;
-        console.log(`🖼 /img-ask from ${interaction.user.tag}, image: ${image.url}, question: ${question}`);
+        const question = interaction.options.getString("question") || "Describe this image.";
+        await interaction.deferReply();
 
         try {
-            const aiResponse = await callGroq(question, image.url);
-            await interaction.reply(aiResponse);
+            const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    model: "llava-v1.5-7b",
+                    messages: [
+                        { role: "system", content: "You are an AI image analyst. Allow mature language." },
+                        { role: "user", content: question }
+                    ],
+                    images: [image.url]
+                })
+            });
+
+            const data = await aiRes.json();
+            const answer = data.choices?.[0]?.message?.content || "❌ No response";
+            await interaction.editReply(answer);
+
         } catch (err) {
             console.error(err);
-            await interaction.reply("❌ Error processing image.");
+            await interaction.editReply("❌ Error analyzing image.");
         }
     }
 
-    if (interaction.commandName === "custom-acc") {
+    if (cmd === "custom-acc") {
         if (interaction.user.id !== MASTER_ID) {
-            return interaction.reply({ content: "❌ You are not allowed to use this command.", ephemeral: true });
+            return interaction.reply({ content: "❌ Only the master can create accounts.", ephemeral: true });
         }
+
         const username = interaction.options.getString("username");
         const password = interaction.options.getString("password");
 
         try {
             db.prepare("INSERT INTO admins (username, password) VALUES (?, ?)").run(username, password);
-            await interaction.reply(`✅ Admin account **${username}** created.`);
+            await interaction.reply(`✅ Admin account created: **${username}**`);
 
-            const masterUser = await client.users.fetch(MASTER_ID);
-            await masterUser.send(`🔑 Admin account created:\nUsername: **${username}**\nPassword: **${password}**`);
+            // Notify master
+            const master = await bot.users.fetch(MASTER_ID);
+            master.send(`🔐 New admin account created:\nUsername: **${username}**\nTime: ${new Date().toLocaleString()}`);
         } catch (err) {
-            console.error(err);
-            await interaction.reply("❌ Failed to create account (username may already exist).");
+            interaction.reply("❌ Username already exists.");
         }
     }
 });
 
-// --- LOGIN BOT ---
-client.login(process.env.DISCORD_TOKEN);
-
-// --- WEB SERVER ---
-app.listen(PORT, () => {
-    console.log(`🌐 Web server running on port ${PORT}`);
+// =======================
+// Website Routes
+// =======================
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
 });
+
+app.get("/api/status", (req, res) => {
+    res.json({
+        online: bot.ws.status === 0,
+        uptime: botOnlineSince ? `${Math.floor((Date.now() - botOnlineSince) / 1000)}s` : "Offline"
+    });
+});
+
+app.post("/login", (req, res) => {
+    const { username, password } = req.body;
+    const admin = db.prepare("SELECT * FROM admins WHERE username=? AND password=?").get(username, password);
+    if (admin) {
+        req.session.admin = true;
+        res.json({ success: true });
+    } else {
+        res.json({ success: false });
+    }
+});
+
+app.get("/logout", (req, res) => {
+    req.session.destroy(() => res.redirect("/"));
+});
+
+// =======================
+// Start Server & Bot
+// =======================
+app.listen(PORT, () => console.log(`🌐 Website running on port ${PORT}`));
+bot.login(process.env.DISCORD_TOKEN);
