@@ -195,8 +195,7 @@ bot.on("interactionCreate", async (interaction) => {
             const master = await bot.users.fetch(MASTER_ID);
             master.send(`🔐 New admin account created:\nUsername: **${username}**\nTime: ${new Date().toLocaleString()}`);
         } catch (err) {
-            // Fixed: Await reply and make it ephemeral to avoid multiple replies conflict
-            await interaction.reply({ content: "❌ Username already exists.", ephemeral: true });
+            await interaction.reply("❌ Username already exists.");
         }
     }
 });
@@ -208,21 +207,37 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
 
+// Returns bot online status and uptime if logged in
 app.get("/api/status", (req, res) => {
-    res.json({
-        online: bot.ws.status === 0 && botOnlineSince !== null,
-        uptime: botOnlineSince ? `${Math.floor((Date.now() - botOnlineSince) / 1000)}s` : "Offline"
-    });
+    if (req.session.admin) {
+        res.json({
+            online: bot.ws.status === 0,
+            uptime: botOnlineSince ? `${Math.floor((Date.now() - botOnlineSince) / 1000)}s` : "Offline"
+        });
+    } else {
+        res.json({ online: false, uptime: null });
+    }
 });
 
 app.post("/login", (req, res) => {
     const { username, password } = req.body;
-    const admin = db.prepare("SELECT * FROM admins WHERE username=? AND password=?").get(username, password);
-    if (admin) {
-        req.session.admin = true;
-        res.json({ success: true });
-    } else {
-        res.json({ success: false });
+
+    if (!username || !password) {
+        return res.json({ success: false, message: "Please provide username and password" });
+    }
+
+    try {
+        const admin = db.prepare("SELECT * FROM admins WHERE username = ? AND password = ?").get(username, password);
+        if (admin) {
+            req.session.admin = true;
+            req.session.username = username;
+            return res.json({ success: true });
+        } else {
+            return res.json({ success: false, message: "Incorrect username or password" });
+        }
+    } catch (err) {
+        console.error("Login error:", err);
+        return res.json({ success: false, message: "Server error during login" });
     }
 });
 
