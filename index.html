@@ -3,18 +3,196 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>KittyAI - Welcome</title>
+<title>KittyAI Admin Panel</title>
 <style>
-  /* (same styles as before, omitted here for brevity) */
-  /* ... */
+  /* Gradient background */
+  body, html {
+    margin: 0; padding: 0; height: 100%;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+    color: white;
+    overflow: hidden;
+  }
+
+  /* Container */
+  .container {
+    display: flex;
+    height: 100vh;
+  }
+
+  /* Sidebar */
+  #sidebar {
+    width: 280px;
+    background: rgba(0,0,0,0.3);
+    backdrop-filter: blur(12px);
+    box-shadow: 4px 0 10px rgba(0,0,0,0.3);
+    padding: 30px 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.3s ease;
+    opacity: 0;
+    pointer-events: none;
+  }
+  #sidebar.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #sidebar h2 {
+    margin: 0 0 20px 0;
+    font-weight: 900;
+    letter-spacing: 1.2px;
+    font-size: 26px;
+    color: #f8f8f8;
+  }
+  #sidebar nav a {
+    display: block;
+    color: #cfd8dc;
+    margin: 10px 0;
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.2s ease;
+  }
+  #sidebar nav a:hover {
+    color: #ffca28;
+  }
+
+  /* Login Requests */
+  #login-requests {
+    margin-top: 20px;
+    font-size: 14px;
+    color: #ddd;
+  }
+  #login-requests ul {
+    list-style: none;
+    padding-left: 0;
+    max-height: 130px;
+    overflow-y: auto;
+  }
+  #login-requests li {
+    margin-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+    padding-bottom: 6px;
+  }
+
+  /* Login Panel */
+  .login-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+    backdrop-filter: blur(12px);
+    background: rgba(255,255,255,0.1);
+    margin: 40px;
+    border-radius: 16px;
+    box-shadow: 0 0 40px rgba(0,0,0,0.3);
+    max-width: 420px;
+    animation: fadeIn 1s ease forwards;
+  }
+
+  .login-panel h1 {
+    font-size: 48px;
+    margin-bottom: 10px;
+    letter-spacing: 6px;
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 0 0 15px #5b8defaa;
+  }
+  .login-panel h2 {
+    font-weight: 400;
+    font-size: 20px;
+    margin-bottom: 30px;
+    color: #ddd;
+  }
+
+  /* Inputs */
+  input[type="text"],
+  input[type="password"] {
+    width: 100%;
+    padding: 14px 16px;
+    margin: 12px 0;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    outline: none;
+    box-shadow: inset 0 0 6px #5b8defcc;
+    background: rgba(255,255,255,0.15);
+    color: white;
+    transition: background 0.3s ease;
+  }
+  input[type="text"]:focus,
+  input[type="password"]:focus {
+    background: rgba(255,255,255,0.35);
+  }
+
+  /* Buttons */
+  button {
+    margin-top: 24px;
+    padding: 14px 0;
+    width: 100%;
+    border: none;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 18px;
+    background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 0 18px #5b8defaa;
+    transition: background 0.3s ease;
+  }
+  button:hover {
+    background: linear-gradient(90deg, #2575fc 0%, #6a11cb 100%);
+  }
+
+  /* Status */
+  .status {
+    margin-top: 10px;
+    font-weight: 600;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .status-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #888;
+    box-shadow: 0 0 6px #444;
+  }
+  .status-online {
+    background: #4caf50;
+    box-shadow: 0 0 8px #4caf50aa;
+  }
+  .status-offline {
+    background: #e53935;
+    box-shadow: 0 0 8px #e53935aa;
+  }
+
+  /* Login message */
+  #login-msg {
+    margin-top: 15px;
+    color: #ff6b6b;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  /* Fade in */
+  @keyframes fadeIn {
+    0% {opacity: 0; transform: translateY(15px);}
+    100% {opacity: 1; transform: translateY(0);}
+  }
 </style>
 </head>
 <body>
   <div class="container">
 
-    <!-- Sidebar (hidden by default, shown after login) -->
-    <aside id="sidebar" style="display:none;">
-      <h3>KittyAI Admin</h3>
+    <!-- Sidebar (hidden before login) -->
+    <aside id="sidebar">
+      <h2>KittyAI Admin</h2>
+      <div id="welcome-msg">Welcome, Admin</div>
       <nav>
         <a href="#" title="Dashboard">🏠 Dashboard</a>
         <a href="#" title="Login Requests">📥 Login Requests</a>
@@ -28,42 +206,56 @@
           <li><strong>1:05 PM</strong> - testuser</li>
         </ul>
       </div>
+
+      <div class="status" id="bot-status">
+        <div class="status-dot status-offline"></div>
+        <span>Offline 🔴 - Uptime: 0s</span>
+      </div>
     </aside>
 
     <!-- Login panel -->
     <section class="login-panel" id="login-panel">
       <h1>KittyAI</h1>
-      <h2>Welcome, Admin</h2>
-
-      <!-- Bot status: hidden initially, shown after login -->
-      <div class="status" id="bot-status" style="display:none;">
-        <div class="status-dot status-offline"></div>
-        <span>Offline</span> - Uptime: 0s
-      </div>
+      <h2>Welcome</h2>
 
       <form id="login-form">
-        <input type="text" id="username" name="username" placeholder="Username" autocomplete="username" required />
-        <input type="password" id="password" name="password" placeholder="Password" autocomplete="current-password" required />
+        <input
+          type="text"
+          id="username"
+          name="username"
+          placeholder="Username"
+          autocomplete="username"
+          required
+        />
+        <input
+          type="password"
+          id="password"
+          name="password"
+          placeholder="Password"
+          autocomplete="current-password"
+          required
+        />
         <button type="submit">Login</button>
       </form>
 
-      <p id="login-msg" style="margin-top:15px;color:#f87171;display:none;"></p>
+      <p id="login-msg" style="display:none;"></p>
     </section>
-
   </div>
 
 <script>
   const loginForm = document.getElementById("login-form");
   const loginMsg = document.getElementById("login-msg");
-  const botStatusDot = document.querySelector(".status-dot");
-  const botStatusText = document.querySelector(".status span");
-  const botStatusContainer = document.getElementById("bot-status");
   const sidebar = document.getElementById("sidebar");
   const loginPanel = document.getElementById("login-panel");
+  const welcomeMsg = document.getElementById("welcome-msg");
+  const botStatusDot = document.querySelector(".status-dot");
+  const botStatusSpan = document.querySelector("#bot-status span");
 
-  // Check bot status every 5s, but only after login
-  let statusInterval = null;
+  // Hide sidebar initially
+  sidebar.style.opacity = "0";
+  sidebar.style.pointerEvents = "none";
 
+  // Helper: Update bot status from API
   async function updateStatus() {
     try {
       const res = await fetch("/api/status");
@@ -72,19 +264,21 @@
       if (data.online) {
         botStatusDot.classList.remove("status-offline");
         botStatusDot.classList.add("status-online");
-        botStatusText.textContent = `Online 🟢 - Uptime: ${data.uptime}`;
+        botStatusSpan.textContent = `Online 🟢 - Uptime: ${data.uptime}`;
       } else {
         botStatusDot.classList.remove("status-online");
         botStatusDot.classList.add("status-offline");
-        botStatusText.textContent = `Offline 🔴 - Uptime: 0s`;
+        botStatusSpan.textContent = `Offline 🔴 - Uptime: 0s`;
       }
-    } catch (e) {
-      // network error, show offline
+    } catch {
       botStatusDot.classList.remove("status-online");
       botStatusDot.classList.add("status-offline");
-      botStatusText.textContent = `Offline 🔴 - Uptime: 0s`;
+      botStatusSpan.textContent = `Offline 🔴 - Uptime: 0s`;
     }
   }
+
+  // Start polling every 5 seconds after login
+  let statusInterval;
 
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -93,32 +287,34 @@
     const password = e.target.password.value.trim();
 
     try {
-      const res = await fetch("/api/admin-login", {
+      const res = await fetch("/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
-      const result = await res.json();
+      const data = await res.json();
 
-      if (res.ok && result.success) {
-        // Hide login form, show sidebar and bot status
+      if (res.ok && data.success) {
+        // Hide login panel, show sidebar
         loginPanel.style.display = "none";
-        sidebar.style.display = "flex";
-        botStatusContainer.style.display = "flex";
+        sidebar.style.opacity = "1";
+        sidebar.style.pointerEvents = "auto";
 
-        // Start status updater
+        // Show welcome with username
+        welcomeMsg.textContent = `Welcome, ${username}`;
+
+        // Update bot status immediately and start interval
         updateStatus();
         statusInterval = setInterval(updateStatus, 5000);
       } else {
-        loginMsg.textContent = result.message || "Login failed";
+        loginMsg.textContent = "❌ Invalid username or password.";
         loginMsg.style.display = "block";
       }
-    } catch (error) {
-      loginMsg.textContent = "Network error";
+    } catch (err) {
+      loginMsg.textContent = "❌ Network error. Try again.";
       loginMsg.style.display = "block";
     }
   });
 </script>
-
 </body>
 </html>
