@@ -195,7 +195,8 @@ bot.on("interactionCreate", async (interaction) => {
             const master = await bot.users.fetch(MASTER_ID);
             master.send(`🔐 New admin account created:\nUsername: **${username}**\nTime: ${new Date().toLocaleString()}`);
         } catch (err) {
-            interaction.reply("❌ Username already exists.");
+            // Fixed: Await reply and make it ephemeral to avoid multiple replies conflict
+            await interaction.reply({ content: "❌ Username already exists.", ephemeral: true });
         }
     }
 });
@@ -209,7 +210,7 @@ app.get("/", (req, res) => {
 
 app.get("/api/status", (req, res) => {
     res.json({
-        online: bot.ws.status === 0,
+        online: bot.ws.status === 0 && botOnlineSince !== null,
         uptime: botOnlineSince ? `${Math.floor((Date.now() - botOnlineSince) / 1000)}s` : "Offline"
     });
 });
