@@ -5,200 +5,297 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>KittyAI Admin Panel</title>
 <style>
-  /* Gradient background */
+  /* Base Reset */
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
   body, html {
     margin: 0; padding: 0; height: 100%;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
-    color: white;
-    overflow: hidden;
+    color: #f0f0f0;
+    overflow-x: hidden;
   }
 
-  /* Container */
+  /* Container holding everything */
   .container {
     display: flex;
     height: 100vh;
+    width: 100vw;
   }
 
   /* Sidebar */
   #sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
     width: 280px;
-    background: rgba(0,0,0,0.3);
-    backdrop-filter: blur(12px);
-    box-shadow: 4px 0 10px rgba(0,0,0,0.3);
-    padding: 30px 20px;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(15px);
+    box-shadow: 4px 0 15px rgba(0,0,0,0.4);
+    padding: 40px 25px 25px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    transition: all 0.3s ease;
-    opacity: 0;
-    pointer-events: none;
+    transform: translateX(-320px);
+    transition: transform 0.4s cubic-bezier(0.4,0,0.2,1);
+    z-index: 1000;
   }
   #sidebar.show {
-    opacity: 1;
-    pointer-events: auto;
+    transform: translateX(0);
   }
+
   #sidebar h2 {
-    margin: 0 0 20px 0;
     font-weight: 900;
-    letter-spacing: 1.2px;
-    font-size: 26px;
-    color: #f8f8f8;
+    font-size: 28px;
+    margin-bottom: 15px;
+    color: #fff;
+    letter-spacing: 2px;
+    user-select: none;
   }
-  #sidebar nav a {
+
+  #welcome-msg {
+    font-weight: 700;
+    font-size: 20px;
+    margin-bottom: 25px;
+    user-select: none;
+  }
+
+  nav a {
     display: block;
-    color: #cfd8dc;
-    margin: 10px 0;
+    color: #ddd;
     text-decoration: none;
     font-weight: 600;
-    transition: color 0.2s ease;
+    font-size: 17px;
+    margin: 14px 0;
+    padding-left: 6px;
+    border-left: 4px solid transparent;
+    transition: border-color 0.3s ease, color 0.3s ease;
   }
-  #sidebar nav a:hover {
+  nav a:hover {
     color: #ffca28;
+    border-left-color: #ffca28;
   }
 
   /* Login Requests */
   #login-requests {
-    margin-top: 20px;
+    margin-top: 30px;
     font-size: 14px;
-    color: #ddd;
+    color: #bbb;
+  }
+  #login-requests h4 {
+    margin-bottom: 10px;
+    user-select: none;
   }
   #login-requests ul {
     list-style: none;
-    padding-left: 0;
-    max-height: 130px;
+    max-height: 150px;
     overflow-y: auto;
+    padding-left: 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
   }
   #login-requests li {
-    margin-bottom: 8px;
-    border-bottom: 1px solid rgba(255,255,255,0.15);
-    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding: 6px 0;
+    user-select: none;
+  }
+  #login-requests strong {
+    color: #fff;
+  }
+
+  /* Bot Status */
+  .status {
+    margin-top: 30px;
+    font-weight: 600;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    user-select: none;
+  }
+  .status-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #888;
+    box-shadow: 0 0 8px #444;
+  }
+  .status-online {
+    background: #4caf50;
+    box-shadow: 0 0 12px #4caf5088;
+  }
+  .status-offline {
+    background: #e53935;
+    box-shadow: 0 0 12px #e5393588;
   }
 
   /* Login Panel */
   .login-panel {
-    flex: 1;
+    flex-grow: 1;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding: 40px;
-    backdrop-filter: blur(12px);
-    background: rgba(255,255,255,0.1);
-    margin: 40px;
-    border-radius: 16px;
+    padding: 40px 25px;
+    max-width: 400px;
+    margin: auto;
+    background: rgba(255,255,255,0.07);
+    border-radius: 18px;
     box-shadow: 0 0 40px rgba(0,0,0,0.3);
-    max-width: 420px;
+    backdrop-filter: blur(18px);
     animation: fadeIn 1s ease forwards;
+    width: 90%;
   }
 
   .login-panel h1 {
     font-size: 48px;
-    margin-bottom: 10px;
-    letter-spacing: 6px;
+    margin: 0 0 8px;
+    letter-spacing: 8px;
     font-weight: 900;
     color: #fff;
-    text-shadow: 0 0 15px #5b8defaa;
+    text-shadow: 0 0 16px #5b8defcc;
+    user-select: none;
   }
+
   .login-panel h2 {
     font-weight: 400;
-    font-size: 20px;
+    font-size: 22px;
     margin-bottom: 30px;
     color: #ddd;
+    user-select: none;
   }
 
   /* Inputs */
   input[type="text"],
   input[type="password"] {
     width: 100%;
-    padding: 14px 16px;
-    margin: 12px 0;
+    padding: 16px 18px;
+    margin: 14px 0;
     border: none;
-    border-radius: 8px;
-    font-size: 16px;
+    border-radius: 12px;
+    font-size: 18px;
     outline: none;
-    box-shadow: inset 0 0 6px #5b8defcc;
-    background: rgba(255,255,255,0.15);
+    box-shadow: inset 0 0 10px #5b8defcc;
+    background: rgba(255,255,255,0.18);
     color: white;
     transition: background 0.3s ease;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  input::placeholder {
+    color: #d0d0d0;
   }
   input[type="text"]:focus,
   input[type="password"]:focus {
-    background: rgba(255,255,255,0.35);
+    background: rgba(255,255,255,0.40);
   }
 
-  /* Buttons */
+  /* Button */
   button {
-    margin-top: 24px;
-    padding: 14px 0;
+    margin-top: 30px;
+    padding: 16px 0;
     width: 100%;
     border: none;
-    border-radius: 12px;
-    font-weight: 700;
-    font-size: 18px;
+    border-radius: 16px;
+    font-weight: 800;
+    font-size: 20px;
     background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
     color: white;
     cursor: pointer;
-    box-shadow: 0 0 18px #5b8defaa;
-    transition: background 0.3s ease;
+    box-shadow: 0 0 24px #5b8defcc;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+    user-select: none;
   }
   button:hover {
     background: linear-gradient(90deg, #2575fc 0%, #6a11cb 100%);
+    box-shadow: 0 0 32px #4a73e4cc;
   }
-
-  /* Status */
-  .status {
-    margin-top: 10px;
-    font-weight: 600;
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .status-dot {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: #888;
-    box-shadow: 0 0 6px #444;
-  }
-  .status-online {
-    background: #4caf50;
-    box-shadow: 0 0 8px #4caf50aa;
-  }
-  .status-offline {
-    background: #e53935;
-    box-shadow: 0 0 8px #e53935aa;
+  button:active {
+    transform: scale(0.98);
   }
 
   /* Login message */
   #login-msg {
-    margin-top: 15px;
+    margin-top: 20px;
     color: #ff6b6b;
-    font-weight: 600;
+    font-weight: 700;
     text-align: center;
+    user-select: none;
   }
 
-  /* Fade in */
+  /* Fade in animation */
   @keyframes fadeIn {
-    0% {opacity: 0; transform: translateY(15px);}
+    0% {opacity: 0; transform: translateY(20px);}
     100% {opacity: 1; transform: translateY(0);}
+  }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    #sidebar {
+      position: fixed;
+      width: 100%;
+      height: 280px;
+      bottom: 0;
+      top: auto;
+      left: 0;
+      padding: 20px 25px 25px;
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: space-around;
+      transform: translateY(320px);
+      box-shadow: 0 -4px 25px rgba(0,0,0,0.4);
+      border-radius: 20px 20px 0 0;
+    }
+    #sidebar.show {
+      transform: translateY(0);
+    }
+    #sidebar h2 {
+      font-size: 20px;
+      margin: 0 15px 0 0;
+    }
+    #welcome-msg {
+      font-size: 16px;
+      margin: 0 15px 0 0;
+      flex-shrink: 0;
+    }
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+    }
+    nav a {
+      font-size: 15px;
+      margin: 0;
+      padding-left: 0;
+      border-left: none;
+    }
+    #login-requests {
+      display: none; /* Hide login requests on small screens */
+    }
+    .status {
+      font-size: 14px;
+    }
+    .login-panel {
+      max-width: 100%;
+      margin: 40px 15px 20px;
+      padding: 30px 20px;
+      border-radius: 14px;
+    }
   }
 </style>
 </head>
 <body>
   <div class="container">
-
-    <!-- Sidebar (hidden before login) -->
-    <aside id="sidebar">
+    <!-- Sidebar -->
+    <aside id="sidebar" aria-label="Admin sidebar navigation">
       <h2>KittyAI Admin</h2>
-      <div id="welcome-msg">Welcome, Admin</div>
+      <div id="welcome-msg" aria-live="polite">Welcome, Admin</div>
       <nav>
-        <a href="#" title="Dashboard">🏠 Dashboard</a>
-        <a href="#" title="Login Requests">📥 Login Requests</a>
-        <a href="/logout" title="Logout">🚪 Logout</a>
+        <a href="#" title="Dashboard" tabindex="0">🏠 Dashboard</a>
+        <a href="#" title="Login Requests" tabindex="0">📥 Login Requests</a>
+        <a href="/logout" title="Logout" tabindex="0">🚪 Logout</a>
       </nav>
-      <div id="login-requests">
+
+      <div id="login-requests" aria-label="Login requests">
         <h4>Login Requests</h4>
         <ul>
           <li><strong>12:15 AM</strong> - user123</li>
@@ -207,18 +304,19 @@
         </ul>
       </div>
 
-      <div class="status" id="bot-status">
-        <div class="status-dot status-offline"></div>
+      <div class="status" id="bot-status" aria-live="polite" aria-atomic="true">
+        <div class="status-dot status-offline" aria-hidden="true"></div>
         <span>Offline 🔴 - Uptime: 0s</span>
       </div>
     </aside>
 
-    <!-- Login panel -->
-    <section class="login-panel" id="login-panel">
-      <h1>KittyAI</h1>
+    <!-- Login Panel -->
+    <section class="login-panel" id="login-panel" role="main" aria-labelledby="login-heading">
+      <h1 id="login-heading">KittyAI</h1>
       <h2>Welcome</h2>
 
-      <form id="login-form">
+      <form id="login-form" aria-describedby="login-msg">
+        <label for="username" class="sr-only">Username</label>
         <input
           type="text"
           id="username"
@@ -226,7 +324,10 @@
           placeholder="Username"
           autocomplete="username"
           required
+          aria-required="true"
+          aria-label="Username"
         />
+        <label for="password" class="sr-only">Password</label>
         <input
           type="password"
           id="password"
@@ -234,87 +335,36 @@
           placeholder="Password"
           autocomplete="current-password"
           required
+          aria-required="true"
+          aria-label="Password"
         />
-        <button type="submit">Login</button>
+        <button type="submit" aria-live="polite" aria-atomic="true">Login</button>
       </form>
 
-      <p id="login-msg" style="display:none;"></p>
+      <p id="login-msg" role="alert" style="display:none;"></p>
     </section>
   </div>
 
-<script>
-  const loginForm = document.getElementById("login-form");
-  const loginMsg = document.getElementById("login-msg");
-  const sidebar = document.getElementById("sidebar");
-  const loginPanel = document.getElementById("login-panel");
-  const welcomeMsg = document.getElementById("welcome-msg");
-  const botStatusDot = document.querySelector(".status-dot");
-  const botStatusSpan = document.querySelector("#bot-status span");
+  <script>
+    const loginForm = document.getElementById("login-form");
+    const loginMsg = document.getElementById("login-msg");
+    const sidebar = document.getElementById("sidebar");
+    const loginPanel = document.getElementById("login-panel");
+    const welcomeMsg = document.getElementById("welcome-msg");
+    const botStatusDot = document.querySelector(".status-dot");
+    const botStatusSpan = document.querySelector("#bot-status span");
 
-  // Hide sidebar initially
-  sidebar.style.opacity = "0";
-  sidebar.style.pointerEvents = "none";
+    // Hide sidebar on start
+    sidebar.classList.remove("show");
 
-  // Helper: Update bot status from API
-  async function updateStatus() {
-    try {
-      const res = await fetch("/api/status");
-      const data = await res.json();
+    // Polling interval for bot status
+    let statusInterval;
 
-      if (data.online) {
-        botStatusDot.classList.remove("status-offline");
-        botStatusDot.classList.add("status-online");
-        botStatusSpan.textContent = `Online 🟢 - Uptime: ${data.uptime}`;
-      } else {
-        botStatusDot.classList.remove("status-online");
-        botStatusDot.classList.add("status-offline");
-        botStatusSpan.textContent = `Offline 🔴 - Uptime: 0s`;
-      }
-    } catch {
-      botStatusDot.classList.remove("status-online");
-      botStatusDot.classList.add("status-offline");
-      botStatusSpan.textContent = `Offline 🔴 - Uptime: 0s`;
-    }
-  }
+    async function updateStatus() {
+      try {
+        const res = await fetch("/api/status");
+        if (!res.ok) throw new Error("Status fetch failed");
+        const data = await res.json();
 
-  // Start polling every 5 seconds after login
-  let statusInterval;
-
-  loginForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    loginMsg.style.display = "none";
-    const username = e.target.username.value.trim();
-    const password = e.target.password.value.trim();
-
-    try {
-      const res = await fetch("/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        // Hide login panel, show sidebar
-        loginPanel.style.display = "none";
-        sidebar.style.opacity = "1";
-        sidebar.style.pointerEvents = "auto";
-
-        // Show welcome with username
-        welcomeMsg.textContent = `Welcome, ${username}`;
-
-        // Update bot status immediately and start interval
-        updateStatus();
-        statusInterval = setInterval(updateStatus, 5000);
-      } else {
-        loginMsg.textContent = "❌ Invalid username or password.";
-        loginMsg.style.display = "block";
-      }
-    } catch (err) {
-      loginMsg.textContent = "❌ Network error. Try again.";
-      loginMsg.style.display = "block";
-    }
-  });
-</script>
-</body>
-</html>
+        if (data.online) {
+          botStatusDot.classList.remove
