@@ -1,370 +1,319 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>KittyAI Admin Panel</title>
-<style>
-  /* Base Reset */
-  *, *::before, *::after {
-    box-sizing: border-box;
-  }
-  body, html {
-    margin: 0; padding: 0; height: 100%;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
-    color: #f0f0f0;
-    overflow-x: hidden;
-  }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KittyAI Admin Panel</title>
+  <style>
+    /* Reset and base */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+    body {
+      background: linear-gradient(135deg, #ff8a00 0%, #e52e71 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 1rem;
+      color: white;
+      user-select: none;
+    }
 
-  /* Container holding everything */
-  .container {
-    display: flex;
-    height: 100vh;
-    width: 100vw;
-  }
-
-  /* Sidebar */
-  #sidebar {
-    position: fixed;
-    top: 0; left: 0; bottom: 0;
-    width: 280px;
-    background: rgba(0, 0, 0, 0.35);
-    backdrop-filter: blur(15px);
-    box-shadow: 4px 0 15px rgba(0,0,0,0.4);
-    padding: 40px 25px 25px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    transform: translateX(-320px);
-    transition: transform 0.4s cubic-bezier(0.4,0,0.2,1);
-    z-index: 1000;
-  }
-  #sidebar.show {
-    transform: translateX(0);
-  }
-
-  #sidebar h2 {
-    font-weight: 900;
-    font-size: 28px;
-    margin-bottom: 15px;
-    color: #fff;
-    letter-spacing: 2px;
-    user-select: none;
-  }
-
-  #welcome-msg {
-    font-weight: 700;
-    font-size: 20px;
-    margin-bottom: 25px;
-    user-select: none;
-  }
-
-  nav a {
-    display: block;
-    color: #ddd;
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 17px;
-    margin: 14px 0;
-    padding-left: 6px;
-    border-left: 4px solid transparent;
-    transition: border-color 0.3s ease, color 0.3s ease;
-  }
-  nav a:hover {
-    color: #ffca28;
-    border-left-color: #ffca28;
-  }
-
-  /* Login Requests */
-  #login-requests {
-    margin-top: 30px;
-    font-size: 14px;
-    color: #bbb;
-  }
-  #login-requests h4 {
-    margin-bottom: 10px;
-    user-select: none;
-  }
-  #login-requests ul {
-    list-style: none;
-    max-height: 150px;
-    overflow-y: auto;
-    padding-left: 0;
-    border-top: 1px solid rgba(255,255,255,0.1);
-  }
-  #login-requests li {
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    padding: 6px 0;
-    user-select: none;
-  }
-  #login-requests strong {
-    color: #fff;
-  }
-
-  /* Bot Status */
-  .status {
-    margin-top: 30px;
-    font-weight: 600;
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    user-select: none;
-  }
-  .status-dot {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #888;
-    box-shadow: 0 0 8px #444;
-  }
-  .status-online {
-    background: #4caf50;
-    box-shadow: 0 0 12px #4caf5088;
-  }
-  .status-offline {
-    background: #e53935;
-    box-shadow: 0 0 12px #e5393588;
-  }
-
-  /* Login Panel */
-  .login-panel {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    padding: 40px 25px;
-    max-width: 400px;
-    margin: auto;
-    background: rgba(255,255,255,0.07);
-    border-radius: 18px;
-    box-shadow: 0 0 40px rgba(0,0,0,0.3);
-    backdrop-filter: blur(18px);
-    animation: fadeIn 1s ease forwards;
-    width: 90%;
-  }
-
-  .login-panel h1 {
-    font-size: 48px;
-    margin: 0 0 8px;
-    letter-spacing: 8px;
-    font-weight: 900;
-    color: #fff;
-    text-shadow: 0 0 16px #5b8defcc;
-    user-select: none;
-  }
-
-  .login-panel h2 {
-    font-weight: 400;
-    font-size: 22px;
-    margin-bottom: 30px;
-    color: #ddd;
-    user-select: none;
-  }
-
-  /* Inputs */
-  input[type="text"],
-  input[type="password"] {
-    width: 100%;
-    padding: 16px 18px;
-    margin: 14px 0;
-    border: none;
-    border-radius: 12px;
-    font-size: 18px;
-    outline: none;
-    box-shadow: inset 0 0 10px #5b8defcc;
-    background: rgba(255,255,255,0.18);
-    color: white;
-    transition: background 0.3s ease;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-  }
-  input::placeholder {
-    color: #d0d0d0;
-  }
-  input[type="text"]:focus,
-  input[type="password"]:focus {
-    background: rgba(255,255,255,0.40);
-  }
-
-  /* Button */
-  button {
-    margin-top: 30px;
-    padding: 16px 0;
-    width: 100%;
-    border: none;
-    border-radius: 16px;
-    font-weight: 800;
-    font-size: 20px;
-    background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);
-    color: white;
-    cursor: pointer;
-    box-shadow: 0 0 24px #5b8defcc;
-    transition: background 0.3s ease, box-shadow 0.3s ease;
-    user-select: none;
-  }
-  button:hover {
-    background: linear-gradient(90deg, #2575fc 0%, #6a11cb 100%);
-    box-shadow: 0 0 32px #4a73e4cc;
-  }
-  button:active {
-    transform: scale(0.98);
-  }
-
-  /* Login message */
-  #login-msg {
-    margin-top: 20px;
-    color: #ff6b6b;
-    font-weight: 700;
-    text-align: center;
-    user-select: none;
-  }
-
-  /* Fade in animation */
-  @keyframes fadeIn {
-    0% {opacity: 0; transform: translateY(20px);}
-    100% {opacity: 1; transform: translateY(0);}
-  }
-
-  /* Responsive */
-  @media (max-width: 600px) {
-    #sidebar {
-      position: fixed;
+    /* Login panel */
+    #loginPanel {
+      background: rgba(0, 0, 0, 0.7);
+      padding: 2rem 2rem 3rem;
+      border-radius: 12px;
       width: 100%;
-      height: 280px;
-      bottom: 0;
-      top: auto;
-      left: 0;
-      padding: 20px 25px 25px;
-      flex-direction: row;
-      align-items: flex-start;
-      justify-content: space-around;
-      transform: translateY(320px);
-      box-shadow: 0 -4px 25px rgba(0,0,0,0.4);
-      border-radius: 20px 20px 0 0;
+      max-width: 360px;
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+      animation: fadeIn 0.6s ease forwards;
+    }
+    #loginPanel h1 {
+      text-align: center;
+      margin-bottom: 1.5rem;
+      font-weight: 700;
+      font-size: 2rem;
+      letter-spacing: 2px;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    input {
+      padding: 0.8rem 1rem;
+      border-radius: 7px;
+      border: none;
+      font-size: 1rem;
+      outline: none;
+      transition: background 0.3s ease;
+      background: #222;
+      color: white;
+    }
+    input::placeholder {
+      color: #aaa;
+    }
+    input:focus {
+      background: #ff8a00;
+      color: #000;
+    }
+    button {
+      background: #e52e71;
+      border: none;
+      padding: 0.9rem;
+      font-weight: 700;
+      font-size: 1.15rem;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      color: white;
+      user-select: none;
+    }
+    button:hover {
+      background: #ff4f91;
+    }
+
+    #loginMsg {
+      margin-top: 0.6rem;
+      min-height: 1.2rem;
+      text-align: center;
+      font-weight: 600;
+      color: #ff6b6b;
+      user-select: text;
+    }
+
+    /* Sidebar after login */
+    #sidebar {
+      display: none;
+      flex-direction: column;
+      background: rgba(0, 0, 0, 0.85);
+      padding: 1.8rem 2rem;
+      border-radius: 14px;
+      width: 320px;
+      max-width: 95vw;
+      height: 85vh;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.9);
+      animation: slideIn 0.6s ease forwards;
+      overflow-y: auto;
+      position: relative;
     }
     #sidebar.show {
-      transform: translateY(0);
-    }
-    #sidebar h2 {
-      font-size: 20px;
-      margin: 0 15px 0 0;
-    }
-    #welcome-msg {
-      font-size: 16px;
-      margin: 0 15px 0 0;
-      flex-shrink: 0;
-    }
-    nav {
       display: flex;
-      flex-wrap: wrap;
-      gap: 18px;
     }
-    nav a {
-      font-size: 15px;
-      margin: 0;
-      padding-left: 0;
-      border-left: none;
+    #welcomeMsg {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      text-align: center;
+      letter-spacing: 1.3px;
     }
-    #login-requests {
-      display: none; /* Hide login requests on small screens */
+    #botStatus {
+      font-weight: 600;
+      text-align: center;
+      margin-bottom: 1.5rem;
+      color: #a0ffa0;
+      user-select: none;
     }
-    .status {
-      font-size: 14px;
+    #uptime {
+      font-size: 0.95rem;
+      text-align: center;
+      margin-bottom: 2rem;
+      color: #ccc;
+      font-style: italic;
+      user-select: none;
     }
-    .login-panel {
-      max-width: 100%;
-      margin: 40px 15px 20px;
-      padding: 30px 20px;
-      border-radius: 14px;
+
+    #logoutBtn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: transparent;
+      border: 2px solid #ff8a00;
+      border-radius: 8px;
+      padding: 0.35rem 0.9rem;
+      color: #ff8a00;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 0.9rem;
+      user-select: none;
+      transition: all 0.3s ease;
     }
-  }
-</style>
+    #logoutBtn:hover {
+      background: #ff8a00;
+      color: #000;
+    }
+
+    /* Animations */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    /* Responsive */
+    @media (max-width: 480px) {
+      body {
+        padding: 0.7rem;
+      }
+      #loginPanel,
+      #sidebar {
+        width: 100%;
+        height: auto;
+        max-height: none;
+        border-radius: 10px;
+        padding: 1.5rem 1.5rem 2.5rem;
+      }
+      #sidebar {
+        height: auto;
+      }
+      #logoutBtn {
+        top: 0.7rem;
+        right: 0.7rem;
+        padding: 0.3rem 0.7rem;
+      }
+    }
+  </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Sidebar -->
-    <aside id="sidebar" aria-label="Admin sidebar navigation">
-      <h2>KittyAI Admin</h2>
-      <div id="welcome-msg" aria-live="polite">Welcome, Admin</div>
-      <nav>
-        <a href="#" title="Dashboard" tabindex="0">🏠 Dashboard</a>
-        <a href="#" title="Login Requests" tabindex="0">📥 Login Requests</a>
-        <a href="/logout" title="Logout" tabindex="0">🚪 Logout</a>
-      </nav>
+  <!-- Login Panel -->
+  <div id="loginPanel">
+    <h1>KittyAI Admin Login</h1>
+    <form id="loginForm">
+      <input type="text" id="username" name="username" placeholder="Username" autocomplete="username" required />
+      <input type="password" id="password" name="password" placeholder="Password" autocomplete="current-password" required />
+      <button type="submit">Log In</button>
+    </form>
+    <div id="loginMsg"></div>
+  </div>
 
-      <div id="login-requests" aria-label="Login requests">
-        <h4>Login Requests</h4>
-        <ul>
-          <li><strong>12:15 AM</strong> - user123</li>
-          <li><strong>12:30 PM</strong> - cooladmin</li>
-          <li><strong>1:05 PM</strong> - testuser</li>
-        </ul>
-      </div>
-
-      <div class="status" id="bot-status" aria-live="polite" aria-atomic="true">
-        <div class="status-dot status-offline" aria-hidden="true"></div>
-        <span>Offline 🔴 - Uptime: 0s</span>
-      </div>
-    </aside>
-
-    <!-- Login Panel -->
-    <section class="login-panel" id="login-panel" role="main" aria-labelledby="login-heading">
-      <h1 id="login-heading">KittyAI</h1>
-      <h2>Welcome</h2>
-
-      <form id="login-form" aria-describedby="login-msg">
-        <label for="username" class="sr-only">Username</label>
-        <input
-          type="text"
-          id="username"
-          name="username"
-          placeholder="Username"
-          autocomplete="username"
-          required
-          aria-required="true"
-          aria-label="Username"
-        />
-        <label for="password" class="sr-only">Password</label>
-        <input
-          type="password"
-          id="password"
-          name="password"
-          placeholder="Password"
-          autocomplete="current-password"
-          required
-          aria-required="true"
-          aria-label="Password"
-        />
-        <button type="submit" aria-live="polite" aria-atomic="true">Login</button>
-      </form>
-
-      <p id="login-msg" role="alert" style="display:none;"></p>
-    </section>
+  <!-- Sidebar (hidden by default) -->
+  <div id="sidebar">
+    <button id="logoutBtn">Logout</button>
+    <div id="welcomeMsg"></div>
+    <div id="botStatus"></div>
+    <div id="uptime"></div>
   </div>
 
   <script>
-    const loginForm = document.getElementById("login-form");
-    const loginMsg = document.getElementById("login-msg");
+    const loginForm = document.getElementById("loginForm");
+    const loginMsg = document.getElementById("loginMsg");
+    const loginPanel = document.getElementById("loginPanel");
     const sidebar = document.getElementById("sidebar");
-    const loginPanel = document.getElementById("login-panel");
-    const welcomeMsg = document.getElementById("welcome-msg");
-    const botStatusDot = document.querySelector(".status-dot");
-    const botStatusSpan = document.querySelector("#bot-status span");
+    const welcomeMsg = document.getElementById("welcomeMsg");
+    const botStatus = document.getElementById("botStatus");
+    const uptime = document.getElementById("uptime");
+    const logoutBtn = document.getElementById("logoutBtn");
 
-    // Hide sidebar on start
-    sidebar.classList.remove("show");
-
-    // Polling interval for bot status
-    let statusInterval;
-
-    async function updateStatus() {
+    async function fetchStatus() {
       try {
         const res = await fetch("/api/status");
-        if (!res.ok) throw new Error("Status fetch failed");
+        return await res.json();
+      } catch {
+        return { online: false, uptime: null };
+      }
+    }
+
+    async function showSidebar(username) {
+      loginPanel.style.display = "none";
+      sidebar.classList.add("show");
+      welcomeMsg.textContent = `Welcome, ${username}!`;
+      
+      // Fetch and display bot status and uptime
+      const status = await fetchStatus();
+      if (status.online) {
+        botStatus.textContent = "Bot Status: Online 🟢";
+        uptime.textContent = `Uptime: ${status.uptime}`;
+      } else {
+        botStatus.textContent = "Bot Status: Offline 🔴";
+        uptime.textContent = "";
+      }
+    }
+
+    async function checkSession() {
+      // Simple way: try fetching /api/status - if uptime != null, user is logged in
+      const status = await fetchStatus();
+      if (status.uptime !== null) {
+        // Get username from session via an endpoint or store it locally
+        // Since we don't have endpoint for username, try to get it from a cookie or fetch here
+        // For now, let's just reload login to force login (or do a silent fetch)
+        // Instead, we can store username in localStorage on login success:
+        const savedUser = localStorage.getItem("admin_username");
+        if (savedUser) {
+          await showSidebar(savedUser);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    loginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      loginMsg.textContent = "";
+      const username = loginForm.username.value.trim();
+      const password = loginForm.password.value.trim();
+      if (!username || !password) {
+        loginMsg.textContent = "Please enter username and password.";
+        return;
+      }
+
+      try {
+        const res = await fetch("/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
         const data = await res.json();
 
-        if (data.online) {
-          botStatusDot.classList.remove
+        if (data.success) {
+          localStorage.setItem("admin_username", username);
+          loginMsg.style.color = "#a0ffa0";
+          loginMsg.textContent = "Login successful!";
+          await showSidebar(username);
+        } else {
+          loginMsg.style.color = "#ff6b6b";
+          loginMsg.textContent = data.message || "Login failed.";
+        }
+      } catch {
+        loginMsg.style.color = "#ff6b6b";
+        loginMsg.textContent = "Server error. Try again later.";
+      }
+    });
+
+    logoutBtn.addEventListener("click", async () => {
+      try {
+        await fetch("/logout");
+      } catch {}
+      localStorage.removeItem("admin_username");
+      sidebar.classList.remove("show");
+      loginPanel.style.display = "block";
+      loginMsg.textContent = "";
+      loginForm.reset();
+    });
+
+    // On page load check if logged in
+    window.onload = () => {
+      checkSession();
+    };
+  </script>
+</body>
+</html>
